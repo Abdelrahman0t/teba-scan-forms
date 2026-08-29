@@ -122,9 +122,6 @@ export default function Home() {
               />
             </div>
             <div>
-              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-200 text-[11px] font-semibold mb-1">
-                <span>المنصة الطبية الرسمية المعتمدة • 7 نماذج مطابقة 100%</span>
-              </div>
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
                 مركز طيبة سكان للأشعة
               </h1>
