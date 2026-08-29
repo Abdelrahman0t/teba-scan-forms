@@ -167,20 +167,20 @@ export default function PatientsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 no-print">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-indigo-100 text-indigo-700 rounded-xl">
-            <Users className="w-7 h-7" />
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-purple-100 no-print">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-white p-1 shadow-sm border border-purple-200/70 flex items-center justify-center shrink-0">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="w-full h-full object-contain" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-slate-800">سجل المرضى والملفات الطبية الشاملة</h2>
+            <h2 className="text-xl font-extrabold text-[#481454]">سجل المرضى والملفات الطبية الشاملة</h2>
             <p className="text-xs text-slate-500">مركز طيبة سكان للأشعة • استعراض السجل الطبي الكامل وكافة النماذج المسجلة لكل مريض</p>
           </div>
         </div>
       </div>
 
       {/* Search Input */}
-      <div className="relative bg-white p-4 rounded-2xl shadow-sm border border-slate-200 no-print">
+      <div className="relative bg-white p-4 rounded-3xl shadow-sm border border-purple-100 no-print">
         <input
           type="text"
           value={searchQuery}
@@ -189,9 +189,9 @@ export default function PatientsPage() {
             fetchPatients(e.target.value);
           }}
           placeholder="ابحث باسم المريض رباعي أو برقم الملف الطبي (MRN)..."
-          className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs sm:text-sm"
+          className="w-full pl-12 pr-4 py-3 border border-purple-200 rounded-2xl focus:ring-2 focus:ring-[#621c6f] outline-none text-xs sm:text-sm"
         />
-        <Search className="w-5 h-5 absolute left-7 top-7 text-slate-400" />
+        <Search className="w-5 h-5 absolute left-7 top-7 text-purple-400" />
       </div>
 
       {/* Patients List */}
@@ -598,7 +598,7 @@ export default function PatientsPage() {
             </div>
 
             {/* Patient Header Banner */}
-            <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
+            <div className="bg-gradient-to-r from-[#2c0b36] via-[#481454] to-[#2c0b36] text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md border border-purple-800/50">
               <div className="flex items-center gap-3.5">
                 <div className="p-3 bg-white/10 rounded-2xl border border-white/10 text-white">
                   <User className="w-6 h-6" />
@@ -1069,7 +1069,7 @@ export default function PatientsPage() {
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => window.print()}
-                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-sm transition-all"
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-[#621c6f] hover:bg-[#4f1659] text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-sm transition-all"
                 >
                   <Printer className="w-4 h-4" />
                   <span>طباعة النموذج الرسمية</span>

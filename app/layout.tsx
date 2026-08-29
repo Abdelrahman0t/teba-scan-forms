@@ -26,8 +26,8 @@ export default function RootLayout({
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
           {children}
         </main>
-        <footer className="bg-slate-900 text-slate-400 py-4 text-center text-xs no-print border-t border-slate-800">
-          مركز طيبة سكان للأشعة • Tiba Scan Radiology Center © 2026
+        <footer className="bg-[#24082c] text-purple-300/80 py-4 text-center text-xs no-print border-t border-purple-900/50">
+          مركز طيبة سكان للأشعة • Tiba Scan Investigation & Radiology Center © 2026
         </footer>
       </body>
     </html>

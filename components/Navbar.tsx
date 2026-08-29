@@ -53,28 +53,36 @@ export default function Navbar() {
   }, [pathname]);
 
   const formRoutes = [
-    { href: "/forms/radiation-exposure", label: "تسجيل جرعات الأشعة", code: "TRC.MRS", icon: Activity, color: "text-sky-400" },
-    { href: "/forms/patient-education", label: "التثقيف الصحي للأسرة", code: "TRC.MRS", icon: HeartPulse, color: "text-emerald-400" },
-    { href: "/forms/fall-risk-screening", label: "المسح المبدئي لخطر السقوط", code: "TRC.MRS", icon: ShieldAlert, color: "text-amber-400" },
-    { href: "/forms/fall-risk-adult", label: "مخاطر السقوط للكبار (Hendrich II)", code: "TRC-ICD", icon: ShieldAlert, color: "text-rose-400" },
-    { href: "/forms/fall-risk-pediatric", label: "مخاطر السقوط أطفال (Humpty Dumpty)", code: "TRC.ICD", icon: Baby, color: "text-sky-400" },
-    { href: "/forms/patient-assessment", label: "نموذج تقييم المريض الشامل", code: "TRC-ICD", icon: ClipboardCheck, color: "text-indigo-400" },
-    { href: "/forms/patient-transfer", label: "نموذج نقل المريض (RSTP)", code: "TRC.ACT", icon: Ambulance, color: "text-blue-400" },
+    { href: "/forms/radiation-exposure", label: "تسجيل جرعات الأشعة", code: "TRC.MRS", icon: Activity, color: "text-purple-300" },
+    { href: "/forms/patient-education", label: "التثقيف الصحي للأسرة", code: "TRC.MRS", icon: HeartPulse, color: "text-purple-300" },
+    { href: "/forms/fall-risk-screening", label: "المسح المبدئي لخطر السقوط", code: "TRC.MRS", icon: ShieldAlert, color: "text-purple-300" },
+    { href: "/forms/fall-risk-adult", label: "مخاطر السقوط للكبار (Hendrich II)", code: "TRC-ICD", icon: ShieldAlert, color: "text-purple-300" },
+    { href: "/forms/fall-risk-pediatric", label: "مخاطر السقوط أطفال (Humpty Dumpty)", code: "TRC.ICD", icon: Baby, color: "text-purple-300" },
+    { href: "/forms/patient-assessment", label: "نموذج تقييم المريض الشامل", code: "TRC-ICD", icon: ClipboardCheck, color: "text-purple-300" },
+    { href: "/forms/patient-transfer", label: "نموذج نقل المريض (RSTP)", code: "TRC.ACT", icon: Ambulance, color: "text-purple-300" },
   ];
 
   return (
-    <header className="bg-slate-900 text-white shadow-md no-print sticky top-0 z-50 border-b border-slate-800">
+    <header className="bg-gradient-to-r from-[#2c0b36] via-[#3e1149] to-[#2c0b36] text-white shadow-lg no-print sticky top-0 z-50 border-b border-purple-900/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           
           {/* Logo Brand */}
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500 flex items-center justify-center font-black text-white text-xs tracking-wider">
-              TIBA
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center p-0.5 shadow-md border border-purple-200/50 group-hover:scale-105 transition-transform duration-200 overflow-hidden">
+              <img
+                src="/tiba-scan.jpg"
+                alt="Tiba Scan Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
-              <span className="text-sm font-extrabold tracking-tight block">مركز طيبة سكان للأشعة</span>
-              <span className="text-[10px] text-slate-400 block -mt-1 font-mono">Tiba Scan Radiology Center</span>
+              <span className="text-sm sm:text-base font-extrabold tracking-tight block text-white group-hover:text-purple-200 transition-colors">
+                مركز طيبة سكان للأشعة
+              </span>
+              <span className="text-[10px] text-purple-300/80 block -mt-0.5 font-mono">
+                Tiba Scan Radiology Center
+              </span>
             </div>
           </Link>
 
@@ -84,8 +92,8 @@ export default function Navbar() {
               href="/"
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                 pathname === "/"
-                  ? "bg-sky-600 text-white shadow-md shadow-sky-600/30"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  ? "bg-[#7a2088] text-white shadow-md shadow-purple-950/40 border border-purple-400/30"
+                  : "text-purple-100 hover:bg-purple-950/60 hover:text-white"
               }`}
             >
               <Home className="w-4 h-4" />
@@ -99,11 +107,11 @@ export default function Navbar() {
                 onClick={() => setFormsDropdownOpen((prev) => !prev)}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
                   pathname.startsWith("/forms") || formsDropdownOpen
-                    ? "bg-slate-800 text-sky-400 border border-slate-700 shadow-sm"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    ? "bg-[#581c68] text-white border border-purple-400/40 shadow-sm"
+                    : "text-purple-100 hover:bg-purple-950/60 hover:text-white"
                 }`}
               >
-                <ClipboardCheck className="w-4 h-4" />
+                <ClipboardCheck className="w-4 h-4 text-purple-300" />
                 <span>النماذج الطبية الرسمية (7)</span>
                 <ChevronDown className={`w-3.5 h-3.5 mt-0.5 transition-transform duration-200 ${formsDropdownOpen ? "rotate-180" : ""}`} />
               </button>
@@ -111,11 +119,11 @@ export default function Navbar() {
               {/* Dropdown Popup Panel */}
               {formsDropdownOpen && (
                 <div
-                  className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+                  className="absolute right-0 mt-2 w-80 bg-[#2d0c38] border border-purple-800/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 backdrop-blur-md"
                 >
-                  <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 border-b border-slate-800 mb-1 flex items-center justify-between">
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-purple-200 border-b border-purple-900/60 mb-1 flex items-center justify-between">
                     <span>قائمة النماذج والمستندات الطبية المعتمدة</span>
-                    <span className="text-[9px] bg-slate-800 px-1.5 py-0.5 rounded text-sky-400 font-mono">7 نماذج</span>
+                    <span className="text-[9px] bg-[#4a155c] px-2 py-0.5 rounded-full text-purple-200 font-mono">7 نماذج</span>
                   </div>
                   <div className="space-y-1 max-h-[75vh] overflow-y-auto">
                     {formRoutes.map((f) => {
@@ -128,8 +136,8 @@ export default function Navbar() {
                           onClick={() => setFormsDropdownOpen(false)}
                           className={`flex items-center justify-between p-2.5 rounded-xl transition-all ${
                             isActive
-                              ? "bg-sky-600 text-white shadow-xs"
-                              : "hover:bg-slate-800 text-slate-200"
+                              ? "bg-[#7a2088] text-white shadow-xs"
+                              : "hover:bg-[#431454] text-purple-100"
                           }`}
                         >
                           <div className="flex items-center gap-2.5">
@@ -137,7 +145,7 @@ export default function Navbar() {
                             <span className="text-xs font-bold">{f.label}</span>
                           </div>
                           <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${
-                            isActive ? "bg-sky-700 text-white" : "bg-slate-950 text-slate-400"
+                            isActive ? "bg-[#51165e] text-white" : "bg-[#1f0826] text-purple-300"
                           }`}>
                             {f.code}
                           </span>
@@ -154,8 +162,8 @@ export default function Navbar() {
               href="/submissions"
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                 pathname === "/submissions"
-                  ? "bg-sky-600 text-white shadow-md shadow-sky-600/30"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  ? "bg-[#7a2088] text-white shadow-md shadow-purple-950/40 border border-purple-400/30"
+                  : "text-purple-100 hover:bg-purple-950/60 hover:text-white"
               }`}
             >
               <Database className="w-4 h-4" />
@@ -167,8 +175,8 @@ export default function Navbar() {
               href="/patients"
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                 pathname === "/patients"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  ? "bg-[#7a2088] text-white shadow-md shadow-purple-950/40 border border-purple-400/30"
+                  : "text-purple-100 hover:bg-purple-950/60 hover:text-white"
               }`}
             >
               <Users className="w-4 h-4" />
@@ -180,10 +188,10 @@ export default function Navbar() {
           <div className="flex md:hidden items-center">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 focus:outline-none transition-colors"
+              className="p-2 rounded-xl text-purple-200 hover:text-white hover:bg-purple-900/60 focus:outline-none transition-colors"
               aria-label="القائمة الرئيسية"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6 text-sky-400" />}
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6 text-purple-200" />}
             </button>
           </div>
 
@@ -192,16 +200,16 @@ export default function Navbar() {
 
       {/* Mobile Drawer Dropdown */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-slate-950 border-t border-slate-800 px-4 py-4 space-y-3 animate-in slide-in-from-top-2 duration-200">
+        <div className="md:hidden bg-[#24082c] border-t border-purple-900/60 px-4 py-4 space-y-3 animate-in slide-in-from-top-2 duration-200">
           <div className="space-y-1">
             <Link
               href="/"
               onClick={() => setMobileMenuOpen(false)}
               className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                pathname === "/" ? "bg-sky-600 text-white" : "text-slate-300 hover:bg-slate-900"
+                pathname === "/" ? "bg-[#7a2088] text-white" : "text-purple-200 hover:bg-[#380e45]"
               }`}
             >
-              <Home className="w-4 h-4 text-sky-400" />
+              <Home className="w-4 h-4 text-purple-300" />
               <span>الرئيسية</span>
             </Link>
 
@@ -209,10 +217,10 @@ export default function Navbar() {
               href="/submissions"
               onClick={() => setMobileMenuOpen(false)}
               className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                pathname === "/submissions" ? "bg-sky-600 text-white" : "text-slate-300 hover:bg-slate-900"
+                pathname === "/submissions" ? "bg-[#7a2088] text-white" : "text-purple-200 hover:bg-[#380e45]"
               }`}
             >
-              <Database className="w-4 h-4 text-sky-400" />
+              <Database className="w-4 h-4 text-purple-300" />
               <span>كافة النماذج المسجلة</span>
             </Link>
 
@@ -220,16 +228,16 @@ export default function Navbar() {
               href="/patients"
               onClick={() => setMobileMenuOpen(false)}
               className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                pathname === "/patients" ? "bg-indigo-600 text-white" : "text-slate-300 hover:bg-slate-900"
+                pathname === "/patients" ? "bg-[#7a2088] text-white" : "text-purple-200 hover:bg-[#380e45]"
               }`}
             >
-              <Users className="w-4 h-4 text-indigo-400" />
+              <Users className="w-4 h-4 text-purple-300" />
               <span>سجل المرضى الشامل</span>
             </Link>
           </div>
 
-          <div className="border-t border-slate-800 pt-2 space-y-1">
-            <span className="text-[10px] font-bold text-slate-500 px-2 block">النماذج الطبية الرسمية:</span>
+          <div className="border-t border-purple-900/60 pt-2 space-y-1">
+            <span className="text-[10px] font-bold text-purple-300 px-2 block">النماذج الطبية الرسمية:</span>
             {formRoutes.map((f) => {
               const Icon = f.icon;
               const isActive = pathname === f.href;
@@ -239,14 +247,14 @@ export default function Navbar() {
                   href={f.href}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                    isActive ? "bg-sky-600 text-white" : "text-slate-300 hover:bg-slate-900"
+                    isActive ? "bg-[#7a2088] text-white" : "text-purple-200 hover:bg-[#380e45]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Icon className="w-4 h-4 text-sky-400" />
+                    <Icon className="w-4 h-4 text-purple-300" />
                     <span>{f.label}</span>
                   </div>
-                  <span className="text-[9px] font-mono text-slate-400 bg-slate-900 px-1 rounded">{f.code}</span>
+                  <span className="text-[9px] font-mono text-purple-300 bg-[#190520] px-1.5 py-0.5 rounded">{f.code}</span>
                 </Link>
               );
             })}

@@ -514,17 +514,17 @@ function PatientTransferContent() {
   return (
     <div className="max-w-4xl mx-auto space-y-5 pb-16 px-2 sm:px-0">
       {/* Header */}
-      <div className="flex items-center justify-between bg-white px-5 py-4 rounded-2xl border border-slate-200/80 shadow-xs no-print">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
-            <Ambulance className="w-5 h-5" />
+      <div className="flex items-center justify-between bg-white px-5 py-4 rounded-3xl border border-purple-100 shadow-sm no-print">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-white p-0.5 shadow-sm border border-purple-200 flex items-center justify-center shrink-0">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
+              <h2 className="text-base sm:text-lg font-extrabold text-[#481454]">
                 نموذج نقل المريض (Patient Transfer)
               </h2>
-              <span className="bg-slate-100 text-slate-600 text-[11px] font-mono font-bold px-2 py-0.5 rounded border border-slate-200">
+              <span className="bg-purple-50 text-purple-900 text-[11px] font-mono font-bold px-2 py-0.5 rounded border border-purple-200">
                 TRC.ACT
               </span>
             </div>
@@ -852,7 +852,7 @@ function PatientTransferContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-blue-600/20 disabled:opacity-50"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-[#1d8a98]/20 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -898,7 +898,7 @@ function PatientTransferContent() {
               <button
                 type="button"
                 onClick={handleNewForm}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>إدخال نموذج نقل جديد</span>
@@ -910,14 +910,17 @@ function PatientTransferContent() {
 
       {/* PRINT VIEW SHEET (100% MATCHING نموذج نقل المريض.pdf) */}
       <div className="hidden print:block bg-white p-6 text-black font-sans text-xs">
-        <div className="flex justify-between items-center border-b-2 border-black pb-2 mb-2">
-          <div>
-            <h2 className="text-base font-bold">Tiba Scan Radiology Center</h2>
-            <h3 className="text-sm font-bold">مركز طيبة سكان للأشعة</h3>
+        <div className="flex justify-between items-center pb-2 mb-2 border-b-2 border-black">
+          <div className="flex items-center gap-2">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="h-11 w-auto object-contain" />
+            <div className="text-right">
+              <h2 className="text-sm font-bold">Tiba Scan Radiology Center</h2>
+              <h3 className="text-xs font-bold">مركز طيبة سكان للأشعة</h3>
+            </div>
           </div>
           <div className="text-left font-mono font-bold">
-            <p>TRC.ACT</p>
-            <p className="text-[10px]">Page 1 of 2</p>
+            <div className="border border-black px-2 py-0.5 text-xs">TRC.ACT</div>
+            <p className="text-[10px] mt-0.5">Page 1 of 2</p>
           </div>
         </div>
 

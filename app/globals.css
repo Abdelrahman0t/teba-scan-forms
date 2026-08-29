@@ -2,10 +2,15 @@
 
 @layer base {
   :root {
-    --background: #f8fafc;
-    --foreground: #0f172a;
-    --primary: #0284c7;
-    --primary-hover: #0369a1;
+    --background: #faf8fc;
+    --foreground: #1e1124;
+    --primary: #5c1d6b;
+    --primary-hover: #481454;
+    --tiba-purple: #5c1d6b;
+    --tiba-dark: #3b1147;
+    --tiba-accent: #7c2089;
+    --tiba-teal: #1d8a98;
+    --tiba-teal-hover: #167480;
   }
 
   body {

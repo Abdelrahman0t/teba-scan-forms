@@ -449,17 +449,17 @@ function FallRiskScreeningContent() {
   return (
     <div className="max-w-4xl mx-auto space-y-5 pb-16 px-2 sm:px-0">
       {/* Top Header Card */}
-      <div className="flex items-center justify-between bg-white px-5 py-4 rounded-2xl border border-slate-200/80 shadow-xs no-print">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl border border-amber-100">
-            <ShieldAlert className="w-5 h-5" />
+      <div className="flex items-center justify-between bg-white px-5 py-4 rounded-3xl border border-purple-100 shadow-sm no-print">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-white p-0.5 shadow-sm border border-purple-200 flex items-center justify-center shrink-0">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
+              <h2 className="text-base sm:text-lg font-extrabold text-[#481454]">
                 المسح (الفحص المبدئي) لخطر السقوط
               </h2>
-              <span className="bg-slate-100 text-slate-600 text-[11px] font-mono font-bold px-2 py-0.5 rounded border border-slate-200">
+              <span className="bg-purple-50 text-purple-900 text-[11px] font-mono font-bold px-2 py-0.5 rounded border border-purple-200">
                 TRC.MRS
               </span>
             </div>
@@ -507,7 +507,7 @@ function FallRiskScreeningContent() {
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
                       ? "border-rose-400 bg-rose-50/40"
-                      : "border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                      : "border-slate-300 focus:border-[#1d8a98] focus:ring-2 focus:ring-[#1d8a98]/20"
                   }`}
                 />
                 <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
@@ -532,7 +532,7 @@ function FallRiskScreeningContent() {
                     ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                     : fieldErrors.patientName
                     ? "border-rose-400 bg-rose-50/40"
-                    : "border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                    : "border-slate-300 focus:border-[#1d8a98] focus:ring-2 focus:ring-[#1d8a98]/20"
                 }`}
               />
               {fieldErrors.patientName && (
@@ -558,7 +558,7 @@ function FallRiskScreeningContent() {
                       onClick={() => setGender(normalizeGender(g))}
                       className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${
                         isSelected
-                          ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                          ? "bg-[#1d8a98] text-white border-[#1d8a98] shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
                       } ${isLocked ? "cursor-not-allowed opacity-80" : ""}`}
                     >
@@ -567,7 +567,7 @@ function FallRiskScreeningContent() {
                           isSelected ? "border-white bg-white" : "border-slate-400"
                         }`}
                       >
-                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>}
+                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-[#1d8a98]"></span>}
                       </span>
                       <span>{g}</span>
                     </button>
@@ -595,7 +595,7 @@ function FallRiskScreeningContent() {
                     ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                     : fieldErrors.age
                     ? "border-rose-400 bg-rose-50/40"
-                    : "border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                    : "border-slate-300 focus:border-[#1d8a98] focus:ring-2 focus:ring-[#1d8a98]/20"
                 }`}
               />
               {fieldErrors.age && (
@@ -723,7 +723,7 @@ function FallRiskScreeningContent() {
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.screenerSignature
                       ? "border-rose-400 bg-rose-50/40"
-                      : "border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                      : "border-slate-300 focus:border-[#1d8a98] focus:ring-2 focus:ring-[#1d8a98]/20"
                   }`}
                 />
                 <UserCheck className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
@@ -769,7 +769,7 @@ function FallRiskScreeningContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-amber-500/20 disabled:opacity-50"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-[#1d8a98]/20 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -815,7 +815,7 @@ function FallRiskScreeningContent() {
               <button
                 type="button"
                 onClick={handleNewForm}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>إدخال فحص جديد</span>
@@ -827,12 +827,17 @@ function FallRiskScreeningContent() {
 
       {/* PRINT VIEW SHEET (100% MATCHING المسح (الفحص المبدئي) لخطر السقوط.pdf) */}
       <div className="hidden print:block bg-white p-4 text-black font-sans">
-        <div className="relative text-center pb-2 mb-2">
-          <div className="absolute left-0 top-0 border-2 border-black px-2 py-0.5 font-bold text-xs font-mono tracking-widest">
-            TIBA
+        <div className="flex justify-between items-center pb-2 mb-2 border-b-2 border-black">
+          <div className="flex items-center gap-2">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="h-11 w-auto object-contain" />
+            <div className="text-right">
+              <h2 className="text-sm font-bold">Tiba Scan Radiology Center</h2>
+              <h3 className="text-xs font-bold">مركز طيبة سكان للأشعة</h3>
+            </div>
           </div>
-          <h2 className="text-base font-bold">Tiba Scan Radiology Center</h2>
-          <h3 className="text-sm font-bold">مركز طيبة سكان للأشعة</h3>
+          <div className="border border-black px-2 py-0.5 font-bold text-xs font-mono">
+            TRC.MRS
+          </div>
         </div>
 
         <div className="flex justify-between items-center text-xs font-bold py-2 mb-1 border-b border-black">

@@ -692,17 +692,17 @@ function PatientAssessmentContent() {
   return (
     <div className="max-w-4xl mx-auto space-y-5 pb-16 px-2 sm:px-0">
       {/* Top Header Card */}
-      <div className="flex items-center justify-between bg-white px-5 py-4 rounded-2xl border border-slate-200/80 shadow-xs no-print">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
-            <ClipboardCheck className="w-5 h-5" />
+      <div className="flex items-center justify-between bg-white px-5 py-4 rounded-3xl border border-purple-100 shadow-sm no-print">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-white p-0.5 shadow-sm border border-purple-200 flex items-center justify-center shrink-0">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900">
+              <h2 className="text-base sm:text-lg font-extrabold text-[#481454]">
                 نموذج تقييم المريض الشامل
               </h2>
-              <span className="bg-slate-100 text-slate-600 text-[11px] font-mono font-bold px-2 py-0.5 rounded border border-slate-200">
+              <span className="bg-purple-50 text-purple-900 text-[11px] font-mono font-bold px-2 py-0.5 rounded border border-purple-200">
                 TRC-ICD
               </span>
             </div>
@@ -1721,7 +1721,7 @@ function PatientAssessmentContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 disabled:opacity-50"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-[#1d8a98]/20 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -1767,7 +1767,7 @@ function PatientAssessmentContent() {
               <button
                 type="button"
                 onClick={handleNewForm}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
+                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>إدخال تقييم جديد</span>
@@ -1779,12 +1779,17 @@ function PatientAssessmentContent() {
 
       {/* PRINT VIEW SHEET (100% MATCHING نموذج تقييم المريض .pdf) */}
       <div className="hidden print:block bg-white p-6 text-black font-sans text-xs">
-        <div className="flex justify-between items-center border-b-2 border-black pb-2 mb-2">
-          <div>
-            <h2 className="text-base font-bold">Tiba Scan Radiology Center</h2>
-            <h3 className="text-sm font-bold">مركز طيبة سكان للأشعة</h3>
+        <div className="flex justify-between items-center pb-2 mb-2 border-b-2 border-black">
+          <div className="flex items-center gap-2">
+            <img src="/tiba-scan.jpg" alt="Tiba Scan" className="h-11 w-auto object-contain" />
+            <div className="text-right">
+              <h2 className="text-sm font-bold">Tiba Scan Radiology Center</h2>
+              <h3 className="text-xs font-bold">مركز طيبة سكان للأشعة</h3>
+            </div>
           </div>
-          <div className="font-mono font-bold text-sm">TRC-ICD</div>
+          <div className="border border-black px-2 py-0.5 font-bold text-xs font-mono">
+            TRC-ICD
+          </div>
         </div>
 
         <div className="text-center py-1 bg-slate-200 border border-black font-bold text-sm mb-3">
