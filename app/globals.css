@@ -51,3 +51,21 @@
     border: 1px solid #000 !important;
   }
 }
+
+/* Subtle, clean button shake animation */
+@keyframes button-vibrate {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-4px);
+  }
+  40%, 80% {
+    transform: translateX(4px);
+  }
+}
+
+.animate-button-vibrate {
+  animation: button-vibrate 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+}
+

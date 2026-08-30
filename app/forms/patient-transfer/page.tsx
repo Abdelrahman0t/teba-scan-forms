@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { getCurrentTimeShort, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
+import FormSubmitButton from "@/components/FormSubmitButton";
 
 function playSuccessSound() {
   try {
@@ -58,9 +59,9 @@ const RSTP_PARAMETERS = [
     title_en: "Arrhythmias (Existing or Probable)",
     title_ar: "اضطراب ضربات القلب",
     options: [
-      { score: 0, label_en: "No", label_ar: "لا يوجد (0)" },
-      { score: 1, label_en: "Yes, Not Serious", label_ar: "نعم، غير خطير (+1)" },
-      { score: 2, label_en: "Serious (And AMI in first 48h)", label_ar: "خطير / جلطة حادة (+2)" },
+      { score: 0, label_en: "None", label_ar: "لا يوجد (0)" },
+      { score: 1, label_en: "Controlled on Medication", label_ar: "متحكم به دوائياً (+1)" },
+      { score: 2, label_en: "Active / Life Threatening", label_ar: "نشط / مهدد للحياة (+2)" },
     ],
   },
   {
@@ -163,6 +164,7 @@ function PatientTransferContent() {
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+  const [shakeTrigger, setShakeTrigger] = useState(0);
   const [editId, setEditId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
@@ -319,6 +321,7 @@ function PatientTransferContent() {
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
+      setShakeTrigger((prev) => prev + 1);
       return;
     }
 
@@ -848,25 +851,15 @@ function PatientTransferContent() {
 
         {/* ACTIONS */}
         {!isLocked ? (
-          <div className="flex justify-end pt-1">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-[#1d8a98]/20 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>جاري الحفظ...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{editId ? "حفظ وتوثيق التعديلات" : "حفظ وتوثيق نموذج النقل"}</span>
-                </>
-              )}
-            </button>
-          </div>
+          <FormSubmitButton
+            loading={loading}
+            isLocked={isLocked}
+            fieldErrors={fieldErrors}
+            defaultText="حفظ وتوثيق نموذج النقل"
+            editText="حفظ وتوثيق التعديلات"
+            isEdit={!!editId}
+            shakeTrigger={shakeTrigger}
+          />
         ) : (
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
             <div className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { getCurrentTimeShort, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
+import FormSubmitButton from "@/components/FormSubmitButton";
 
 function playSuccessSound() {
   try {
@@ -75,6 +76,7 @@ function FallRiskAdultContent() {
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+  const [shakeTrigger, setShakeTrigger] = useState(0);
   const [editId, setEditId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
@@ -262,6 +264,7 @@ function FallRiskAdultContent() {
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
+      setShakeTrigger((prev) => prev + 1);
       return;
     }
 
@@ -1021,25 +1024,15 @@ function FallRiskAdultContent() {
 
         {/* BOTTOM ACTION AREA */}
         {!isLocked ? (
-          <div className="flex justify-end pt-1">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-[#1d8a98]/20 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>جاري الحفظ...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{editId ? "حفظ وتوثيق التعديلات" : "حفظ وتوثيق تقييم مخاطر السقوط"}</span>
-                </>
-              )}
-            </button>
-          </div>
+          <FormSubmitButton
+            loading={loading}
+            isLocked={isLocked}
+            fieldErrors={fieldErrors}
+            defaultText="حفظ وتوثيق تقييم مخاطر السقوط"
+            editText="حفظ وتوثيق التعديلات"
+            isEdit={!!editId}
+            shakeTrigger={shakeTrigger}
+          />
         ) : (
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
             <div className="flex items-center gap-2">

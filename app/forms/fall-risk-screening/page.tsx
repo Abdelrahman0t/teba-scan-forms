@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { getCurrentTimeShort, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
+import FormSubmitButton from "@/components/FormSubmitButton";
 
 function playSuccessSound() {
   try {
@@ -58,17 +59,17 @@ const RISK_FACTORS = [
   {
     id: "mental_disability",
     label_ar: "إعاقة ذهنية",
-    label_en: "Mental disability",
+    label_en: "Mental Disability",
   },
   {
     id: "sensory_impairment",
-    label_ar: "خلل في السمع أو البصر",
-    label_en: "Hearing and / or visual impairment",
+    label_ar: "ضعف السمع أو البصر",
+    label_en: "Sensory Impairment (Hearing / Visual)",
   },
   {
     id: "child_under_15",
-    label_ar: "طفل أقل من 15 عام",
-    label_en: "Child less than 15 years",
+    label_ar: "الأطفال تحت سن 15 سنة",
+    label_en: "Pediatric Patient (<15 Years)",
   },
 ];
 
@@ -88,6 +89,7 @@ function FallRiskScreeningContent() {
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+  const [shakeTrigger, setShakeTrigger] = useState(0);
   const [editId, setEditId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
@@ -260,6 +262,7 @@ function FallRiskScreeningContent() {
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
+      setShakeTrigger((prev) => prev + 1);
       return;
     }
 
@@ -765,25 +768,15 @@ function FallRiskScreeningContent() {
 
         {/* BOTTOM ACTION AREA */}
         {!isLocked ? (
-          <div className="flex justify-end pt-1">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-sm px-8 py-3 rounded-xl transition-all shadow-md shadow-[#1d8a98]/20 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>جاري الحفظ...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{editId ? "حفظ وتوثيق التعديلات" : "حفظ وتوثيق مسح خطر السقوط"}</span>
-                </>
-              )}
-            </button>
-          </div>
+          <FormSubmitButton
+            loading={loading}
+            isLocked={isLocked}
+            fieldErrors={fieldErrors}
+            defaultText="حفظ وتوثيق مسح خطر السقوط"
+            editText="حفظ وتوثيق التعديلات"
+            isEdit={!!editId}
+            shakeTrigger={shakeTrigger}
+          />
         ) : (
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in duration-200">
             <div className="flex items-center gap-2">
