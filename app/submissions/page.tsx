@@ -30,6 +30,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { formatTime12 } from "@/lib/timeUtils";
+import { getMrnSearchVariants } from "@/lib/numberUtils";
 
 export default function SubmissionsPage() {
   const supabase = createClient();
@@ -70,143 +71,93 @@ export default function SubmissionsPage() {
       ] = await Promise.all([
         supabase
           .from("radiation_exposure_logs")
-          .select("*, patients(id, full_name, mrn, gender, age, phone)")
+          .select("*")
           .order("created_at", { ascending: false }),
         supabase
           .from("health_education_assessments")
-          .select("*, patients(id, full_name, mrn, gender, age, phone), health_education_topic_entries(*)")
+          .select("*, health_education_topic_entries(*)")
           .order("created_at", { ascending: false }),
         supabase
           .from("fall_risk_screenings")
-          .select("*, patients(id, full_name, mrn, gender, age, phone)")
+          .select("*")
           .order("created_at", { ascending: false }),
         supabase
           .from("fall_risk_adult_assessments")
-          .select("*, patients(id, full_name, mrn, gender, age, phone)")
+          .select("*")
           .order("created_at", { ascending: false }),
         supabase
           .from("fall_risk_pediatric_assessments")
-          .select("*, patients(id, full_name, mrn, gender, age, phone)")
+          .select("*")
           .order("created_at", { ascending: false }),
         supabase
           .from("patient_assessments")
-          .select("*, patients(id, full_name, mrn, gender, age, phone)")
+          .select("*")
           .order("created_at", { ascending: false }),
         supabase
           .from("patient_transfers")
-          .select("*, patients(id, full_name, mrn, gender, age, phone)")
+          .select("*")
           .order("created_at", { ascending: false }),
         supabase.from("patients").select("*"),
       ]);
 
-      const patientMap: { [key: string]: any } = {};
-      if (patientsRes.data) {
-        patientsRes.data.forEach((p) => {
-          patientMap[p.id] = p;
-        });
-      }
+      const patientMap = new Map((patientsRes.data || []).map((p: any) => [p.id, p]));
 
-      function resolvePatient(item: any, type: string, typeName: string, headerCode: string, editUrl: string, icon: any, color: string) {
-        const pObj = item.patients || patientMap[item.patient_id] || {};
+      function resolvePatient(item: any, formType: string, formTypeName: string, headerCode: string, editUrl: string, icon: any, color: string) {
+        const p = item.patient_id ? patientMap.get(item.patient_id) : null;
         return {
           ...item,
-          formType: type,
-          formTypeName: typeName,
+          formType,
+          formTypeName,
           headerCode,
           editUrl: `${editUrl}?editId=${item.id}`,
           icon,
           color,
-          resolvedPatientName: pObj.full_name || "غير محدد",
-          resolvedMrn: pObj.mrn || "غير مسجل",
-          resolvedGender: item.gender || pObj.gender || "-",
-          resolvedAge: item.age || pObj.age || "-",
-          resolvedPhone: pObj.phone || "-",
+          resolvedPatientName: item.patient_name || item.full_name || p?.full_name || "مريض غير مسجل بالاسم",
+          resolvedMrn: item.mrn || p?.mrn || "بدون ملف",
+          resolvedGender: item.gender || p?.gender || "-",
+          resolvedAge: item.age !== undefined && item.age !== null ? item.age : p?.age || "-",
         };
       }
 
-      setRadLogs(
-        (radsRes.data || []).map((r) =>
-          resolvePatient(r, "radiation", "تسجيل جرعات الأشعة", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-sky-600 bg-sky-50")
-        )
-      );
-      setEduLogs(
-        (edusRes.data || []).map((e) =>
-          resolvePatient(e, "education", "التثقيف الصحي للمريض والأسرة", "TRC.MRS", "/forms/patient-education", HeartPulse, "text-emerald-600 bg-emerald-50")
-        )
-      );
-      setFallScreenLogs(
-        (fallScreenRes.data || []).map((f) =>
-          resolvePatient(f, "fall_screen", "المسح المبدئي لخطر السقوط", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")
-        )
-      );
-      setFallAdultLogs(
-        (fallAdultRes.data || []).map((fa) =>
-          resolvePatient(fa, "fall_adult", "تقييم مخاطر السقوط للكبار (Hendrich II)", "TRC-ICD", "/forms/fall-risk-adult", ShieldAlert, "text-rose-600 bg-rose-50")
-        )
-      );
-      setFallPedLogs(
-        (fallPedRes.data || []).map((fp) =>
-          resolvePatient(fp, "fall_ped", "مقياس مخاطر سقوط الأطفال (Humpty Dumpty)", "TRC.ICD", "/forms/fall-risk-pediatric", Baby, "text-cyan-600 bg-cyan-50")
-        )
-      );
-      setAssessmentLogs(
-        (assessRes.data || []).map((a) =>
-          resolvePatient(a, "assessment", "نموذج تقييم المريض الشامل", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-indigo-600 bg-indigo-50")
-        )
-      );
-      setTransferLogs(
-        (transRes.data || []).map((t) =>
-          resolvePatient(t, "transfer", "نموذج نقل المريض (RSTP)", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-blue-600 bg-blue-50")
-        )
-      );
+      setRadLogs((radsRes.data || []).map((r) => resolvePatient(r, "radiation", "تسجيل جرعات الأشعة", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-purple-600 bg-purple-50")));
+      setEduLogs((edusRes.data || []).map((e) => resolvePatient(e, "education", "التثقيف الصحي للأسرة", "TRC.MRS", "/forms/patient-education", HeartPulse, "text-rose-600 bg-rose-50")));
+      setFallScreenLogs((fallScreenRes.data || []).map((fs) => resolvePatient(fs, "fall_screen", "المسح المبدئي لخطر السقوط", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")));
+      setFallAdultLogs((fallAdultRes.data || []).map((fa) => resolvePatient(fa, "fall_adult", "مخاطر السقوط للكبار (Hendrich II)", "TRC-ICD", "/forms/fall-risk-adult", ShieldAlert, "text-orange-600 bg-orange-50")));
+      setFallPedLogs((fallPedRes.data || []).map((fp) => resolvePatient(fp, "fall_ped", "مقياس مخاطر سقوط الأطفال (Humpty Dumpty)", "TRC.ICD", "/forms/fall-risk-pediatric", Baby, "text-cyan-600 bg-cyan-50")));
+      setAssessmentLogs((assessRes.data || []).map((a) => resolvePatient(a, "assessment", "نموذج تقييم المريض الشامل", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-teal-600 bg-teal-50")));
+      setTransferLogs((transRes.data || []).map((t) => resolvePatient(t, "transfer", "نموذج نقل المريض (RSTP)", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-sky-600 bg-sky-50")));
     } catch (err) {
-      console.error("Error fetching submissions:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
-  // Delete handler
   async function handleDeleteRecord(item: any) {
-    const confirmMsg = `هل أنت متأكد من حذف نموذج (${item.formTypeName}) للمريض: ${item.resolvedPatientName}؟\nلا يمكن التراجع عن هذا الإجراء!`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!confirm(`هل أنت متأكد من رغبتك في حذف هذا النموذج (${item.formTypeName} - ${item.resolvedPatientName})؟`)) return;
 
     setDeletingId(item.id);
+    let table = "";
+    if (item.formType === "radiation") table = "radiation_exposure_logs";
+    if (item.formType === "education") table = "health_education_assessments";
+    if (item.formType === "fall_screen") table = "fall_risk_screenings";
+    if (item.formType === "fall_adult") table = "fall_risk_adult_assessments";
+    if (item.formType === "fall_ped") table = "fall_risk_pediatric_assessments";
+    if (item.formType === "assessment") table = "patient_assessments";
+    if (item.formType === "transfer") table = "patient_transfers";
 
     try {
-      const tableMap: { [key: string]: string } = {
-        radiation: "radiation_exposure_logs",
-        education: "health_education_assessments",
-        fall_screen: "fall_risk_screenings",
-        fall_adult: "fall_risk_adult_assessments",
-        fall_ped: "fall_risk_pediatric_assessments",
-        assessment: "patient_assessments",
-        transfer: "patient_transfers",
-      };
-
-      const targetTable = tableMap[item.formType];
-      if (targetTable) {
-        const { error } = await supabase.from(targetTable).delete().eq("id", item.id);
-        if (error) throw error;
-      }
-
-      if (item.submission_id) {
-        await supabase.from("form_submissions").delete().eq("id", item.submission_id);
-      }
-
-      if (selectedSubmission && selectedSubmission.id === item.id) {
-        setSelectedSubmission(null);
-      }
-
+      const { error } = await supabase.from(table).delete().eq("id", item.id);
+      if (error) throw error;
       fetchSubmissions();
+      setSelectedSubmission(null);
     } catch (err: any) {
-      alert(`حدث خطأ أثناء الحذف: ${err.message || "فشل الاتصال بقاعدة البيانات"}`);
+      alert(`حدث خطأ أثناء الحذف: ${err.message}`);
     } finally {
       setDeletingId(null);
     }
   }
 
-  // Filter combined
   const allLogs = [
     ...radLogs,
     ...eduLogs,
@@ -218,12 +169,20 @@ export default function SubmissionsPage() {
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   function matchesQuery(item: any) {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
+    const rawQ = searchQuery.trim().toLowerCase();
+    if (!rawQ) return true;
+    const variants = getMrnSearchVariants(rawQ).map((v) => v.toLowerCase());
+
     const name = (item.resolvedPatientName || "").toLowerCase();
-    const mrn = (item.resolvedMrn || "").toLowerCase();
+    const rawMrn = (item.resolvedMrn || "").toLowerCase();
+    const mrnVariants = getMrnSearchVariants(rawMrn).map((v) => v.toLowerCase());
     const proc = (item.procedure_name || item.from_location || item.diagnosis || "").toLowerCase();
-    return name.includes(q) || mrn.includes(q) || proc.includes(q);
+
+    const mrnMatches = variants.some((qv) =>
+      mrnVariants.some((mv) => mv.includes(qv)) || rawMrn.includes(qv)
+    );
+
+    return name.includes(rawQ) || mrnMatches || proc.includes(rawQ);
   }
 
   const displayedList = (

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getCurrentTimeShort, getCurrentDate, formatTime12 } from "@/lib/timeUtils";
 import FormSubmitButton from "@/components/FormSubmitButton";
+import { findPatientByMrn } from "@/lib/numberUtils";
 
 function playSuccessSound() {
   try {
@@ -113,11 +114,7 @@ function RadiationExposureContent() {
   async function searchPatientByMrn(searchMrn: string) {
     if (!searchMrn.trim() || editLogId) return;
     try {
-      const { data } = await supabase
-        .from("patients")
-        .select("*")
-        .eq("mrn", searchMrn.trim())
-        .single();
+      const data = await findPatientByMrn(supabase, searchMrn);
 
       if (data) {
         setPatientId(data.id);
@@ -217,22 +214,35 @@ function RadiationExposureContent() {
     try {
       let currentPid = patientId;
       if (!currentPid) {
-        const { data: newPatient, error: pError } = await supabase
-          .from("patients")
-          .upsert(
-            {
-              mrn: mrn.trim(),
+        const existingPatient = await findPatientByMrn(supabase, mrn);
+        if (existingPatient) {
+          currentPid = existingPatient.id;
+          setPatientId(currentPid);
+          await supabase
+            .from("patients")
+            .update({
               full_name: patientName.trim(),
               age: age !== "" ? Number(age) : null,
-            },
-            { onConflict: "mrn" }
-          )
-          .select()
-          .single();
+            })
+            .eq("id", currentPid);
+        } else {
+          const { data: newPatient, error: pError } = await supabase
+            .from("patients")
+            .upsert(
+              {
+                mrn: mrn.trim(),
+                full_name: patientName.trim(),
+                age: age !== "" ? Number(age) : null,
+              },
+              { onConflict: "mrn" }
+            )
+            .select()
+            .single();
 
-        if (pError) throw new Error(`خطأ بيانات المريض: ${pError.message}`);
-        currentPid = newPatient.id;
-        setPatientId(currentPid);
+          if (pError) throw new Error(`خطأ بيانات المريض: ${pError.message}`);
+          currentPid = newPatient.id;
+          setPatientId(currentPid);
+        }
       } else {
         await supabase
           .from("patients")

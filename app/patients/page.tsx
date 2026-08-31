@@ -26,6 +26,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { formatTime12 } from "@/lib/timeUtils";
+import { buildPatientSearchFilter } from "@/lib/numberUtils";
 
 export default function PatientsPage() {
   const supabase = createClient();
@@ -57,7 +58,8 @@ export default function PatientsPage() {
     let builder = supabase.from("patients").select("*").order("created_at", { ascending: false });
 
     if (query.trim()) {
-      builder = builder.or(`mrn.ilike.%${query.trim()}%,full_name.ilike.%${query.trim()}%`);
+      const filter = buildPatientSearchFilter(query);
+      builder = builder.or(filter);
     }
 
     const { data } = await builder;
