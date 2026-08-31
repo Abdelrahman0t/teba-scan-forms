@@ -346,7 +346,20 @@ export default function SubmissionsPage() {
                         {item.formType === "education" && `${item.procedure_name || "تثقيف عام"} (${item.education_level || "غير محدد"})`}
                         {item.formType === "fall_screen" && (item.is_high_risk ? "⚠️ عالي الخطورة (F)" : "✓ منخفض")}
                         {item.formType === "fall_adult" && `مجموع النقاط: ${item.total_score} (${item.is_high_risk ? "عالي خطورة" : "منخفض"})`}
-                        {item.formType === "fall_ped" && `مجموع: ${item.total_score} (${item.risk_level})`}
+                        {item.formType === "fall_ped" && (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span>مجموع: {item.total_score}</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              item.risk_level === "عالية المخاطر"
+                                ? "bg-rose-100 text-rose-700 border border-rose-200"
+                                : item.risk_level === "متوسط المخاطر"
+                                ? "bg-amber-100 text-amber-700 border border-amber-200"
+                                : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                            }`}>
+                              {item.risk_level}
+                            </span>
+                          </span>
+                        )}
                         {item.formType === "assessment" && `${item.procedure_name || "-"} | التشخيص: ${item.diagnosis || "-"}`}
                         {item.formType === "transfer" && `من: ${item.from_location} إلى: ${item.to_location} (${item.recommended_vehicle})`}
                       </td>
@@ -708,16 +721,28 @@ export default function SubmissionsPage() {
               {/* ================= FORM 5: PEDIATRIC FALL RISK (HUMPTY DUMPTY) ================= */}
               {selectedSubmission.formType === "fall_ped" && (
                 <div className="space-y-4">
-                  <div className="bg-cyan-50/80 p-4 rounded-2xl border border-cyan-200 flex items-center justify-between text-cyan-950">
+                  <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+                    selectedSubmission.risk_level === "عالية المخاطر"
+                      ? "bg-rose-50 border-rose-300 text-rose-950"
+                      : selectedSubmission.risk_level === "متوسط المخاطر"
+                      ? "bg-amber-50 border-amber-300 text-amber-950"
+                      : "bg-emerald-50 border-emerald-300 text-emerald-950"
+                  }`}>
                     <div>
                       <h4 className="font-extrabold text-sm sm:text-base">
                         مجموع مقياس هامبتي دمبتي: {selectedSubmission.total_score} نقطة
                       </h4>
-                      <span className="text-xs">
+                      <span className="text-xs opacity-90">
                         مستوى الخطورة: <strong>{selectedSubmission.risk_level}</strong>
                       </span>
                     </div>
-                    <span className="px-3 py-1 bg-cyan-600 text-white rounded-xl text-xs font-bold">
+                    <span className={`px-3 py-1 rounded-xl text-xs font-bold ${
+                      selectedSubmission.risk_level === "عالية المخاطر"
+                        ? "bg-rose-600 text-white shadow-xs"
+                        : selectedSubmission.risk_level === "متوسط المخاطر"
+                        ? "bg-amber-500 text-white shadow-xs"
+                        : "bg-emerald-600 text-white shadow-xs"
+                    }`}>
                       {selectedSubmission.risk_level}
                     </span>
                   </div>
@@ -726,13 +751,13 @@ export default function SubmissionsPage() {
                   <div className="bg-slate-50 p-4 rounded-2xl border space-y-2">
                     <span className="font-bold text-slate-800 block text-xs">تفاصيل درجات المقياس السبعة:</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                      <div className="bg-white p-2 rounded-xl border"><span>1. العمر (Age):</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.age_score}</strong></div>
-                      <div className="bg-white p-2 rounded-xl border"><span>2. الجنس (Gender):</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.gender_score}</strong></div>
-                      <div className="bg-white p-2 rounded-xl border"><span>3. التشخيص (Diagnosis):</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.diagnosis_score}</strong></div>
-                      <div className="bg-white p-2 rounded-xl border"><span>4. الإدراك (Cognition):</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.cognitive_score}</strong></div>
-                      <div className="bg-white p-2 rounded-xl border"><span>5. البيئة المحيطة:</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.environmental_score}</strong></div>
-                      <div className="bg-white p-2 rounded-xl border"><span>6. الجراحة والتخدير:</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.surgery_anesthesia_score}</strong></div>
-                      <div className="bg-white p-2 rounded-xl border"><span>7. الأدوية المستعملة:</span> <strong className="font-mono text-cyan-700">+{selectedSubmission.medications_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>1. العمر (Age):</span> <strong className="font-mono text-slate-800">+{selectedSubmission.age_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>2. الجنس (Gender):</span> <strong className="font-mono text-slate-800">+{selectedSubmission.gender_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>3. التشخيص (Diagnosis):</span> <strong className="font-mono text-slate-800">+{selectedSubmission.diagnosis_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>4. الإدراك (Cognition):</span> <strong className="font-mono text-slate-800">+{selectedSubmission.cognitive_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>5. البيئة المحيطة:</span> <strong className="font-mono text-slate-800">+{selectedSubmission.environmental_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>6. الجراحة والتخدير:</span> <strong className="font-mono text-slate-800">+{selectedSubmission.surgery_anesthesia_score}</strong></div>
+                      <div className="bg-white p-2 rounded-xl border"><span>7. الأدوية المستعملة:</span> <strong className="font-mono text-slate-800">+{selectedSubmission.medications_score}</strong></div>
                     </div>
                   </div>
 

@@ -12,6 +12,11 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: "مركز طيبة سكان للأشعة - نظام إدخال البيانات الطبية",
   description: "نظام إدخال وتوثيق التعرض لجرعات الأشعة والتثقيف الصحي للمريض والأسرة",
+  icons: {
+    icon: "/tiba-scan.jpg",
+    shortcut: "/tiba-scan.jpg",
+    apple: "/tiba-scan.jpg",
+  },
 };
 
 export default function RootLayout({
