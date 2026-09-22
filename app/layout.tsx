@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/Navbar";
+import AppShell from "@/components/AppShell";
 
 const cairo = Cairo({
   subsets: ["arabic", "latin"],
@@ -26,14 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" className={`${cairo.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 font-sans">
-        <Navbar />
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+      <body className="min-h-full bg-slate-50 text-slate-900 font-sans">
+        <AppShell>
           {children}
-        </main>
-        <footer className="bg-[#24082c] text-purple-300/80 py-4 text-center text-xs no-print border-t border-purple-900/50">
-          مركز طيبة سكان للأشعة • Tiba Scan Investigation & Radiology Center © 2026
-        </footer>
+        </AppShell>
       </body>
     </html>
   );

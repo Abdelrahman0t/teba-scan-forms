@@ -12,10 +12,14 @@ import {
   RefreshCw,
   PlusCircle,
   Pencil,
+  UserCheck,
 } from "lucide-react";
 import { getCurrentTimeShort, getCurrentDate, formatTime12 } from "@/lib/timeUtils";
 import FormSubmitButton from "@/components/FormSubmitButton";
+import FormRoleGuard from "@/components/FormRoleGuard";
 import { findPatientByMrn } from "@/lib/numberUtils";
+import { useUser } from "@/lib/supabase/auth";
+import { notifyFormSubmission } from "@/lib/syncEvents";
 
 function playSuccessSound() {
   try {
@@ -41,6 +45,7 @@ function RadiationExposureContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const mrnInputRef = useRef<HTMLInputElement>(null);
+  const latestSearchMrnRef = useRef("");
 
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
@@ -66,11 +71,29 @@ function RadiationExposureContent() {
   const [previousCumulativeDose, setPreviousCumulativeDose] = useState<number>(0);
   const [techSignature, setTechSignature] = useState("");
 
-  // Load from editId if present in URL
+  const { profile, role } = useUser();
+
+  // Auto-fill signature from authenticated user
+  useEffect(() => {
+    if (profile?.full_name && !techSignature) {
+      setTechSignature(profile.full_name);
+    }
+  }, [profile, techSignature]);
+
+  // Load from editId or mrn if present in URL
   useEffect(() => {
     const editId = searchParams.get("editId");
+    const mrnParam = searchParams.get("mrn");
+    const nameParam = searchParams.get("name");
+    const ageParam = searchParams.get("age");
+
     if (editId) {
       loadRecordForEdit(editId);
+    } else if (mrnParam) {
+      setMrn(mrnParam);
+      if (nameParam) setPatientName(nameParam);
+      if (ageParam) setAge(Number(ageParam) || "");
+      searchPatientByMrn(mrnParam);
     }
   }, [searchParams]);
 
@@ -111,40 +134,66 @@ function RadiationExposureContent() {
     }
   }
 
-  async function searchPatientByMrn(searchMrn: string) {
-    if (!searchMrn.trim() || editLogId) return;
-    try {
-      const data = await findPatientByMrn(supabase, searchMrn);
+  function clearPatientFields() {
+    setPatientId(null);
+    setPatientName("");
+    setHeightCm("");
+    setWeightKg("");
+    setAge("");
+    setProcedureName("");
+    setProcedureLocation("");
+    setRadiationDose("");
+    setCumulativeDose("");
+    setPreviousCumulativeDose(0);
+  }
 
-      if (data) {
-        setPatientId(data.id);
-        setPatientName(data.full_name || "");
-        if (data.age !== null && data.age !== undefined && data.age !== "") {
-          setAge(data.age);
-        } else {
-          // Check other tables as fallback
-          const [assessRes, fallRes] = await Promise.all([
-            supabase.from("patient_assessments").select("age").eq("patient_id", data.id).not("age", "is", null).order("created_at", { ascending: false }).limit(1),
-            supabase.from("fall_risk_screenings").select("age").eq("patient_id", data.id).not("age", "is", null).order("created_at", { ascending: false }).limit(1),
-          ]);
-          const foundAge = assessRes.data?.[0]?.age || fallRes.data?.[0]?.age;
-          if (foundAge) setAge(foundAge);
-        }
-        fetchPatientRadiationLogs(data.id);
-      } else {
-        setPatientId(null);
-        setPreviousCumulativeDose(0);
+  async function searchPatientByMrn(searchMrn: string) {
+    const cleanMrn = searchMrn ? searchMrn.trim() : "";
+    latestSearchMrnRef.current = cleanMrn;
+    if (editLogId) return;
+
+    if (!cleanMrn) {
+      clearPatientFields();
+      return;
+    }
+
+    try {
+      const thisSearch = cleanMrn;
+      const data = await findPatientByMrn(supabase, cleanMrn);
+      if (latestSearchMrnRef.current !== thisSearch) return;
+
+      if (!data) {
+        clearPatientFields();
+        return;
       }
+
+      setPatientId(data.id);
+      setPatientName(data.full_name || "");
+      if (data.age !== null && data.age !== undefined && data.age !== "") {
+        setAge(data.age);
+      } else {
+        // Check other tables as fallback
+        const [assessRes, fallRes] = await Promise.all([
+          supabase.from("patient_assessments").select("age").eq("patient_id", data.id).not("age", "is", null).order("created_at", { ascending: false }).limit(1),
+          supabase.from("fall_risk_screenings").select("age").eq("patient_id", data.id).not("age", "is", null).order("created_at", { ascending: false }).limit(1),
+        ]);
+        if (latestSearchMrnRef.current !== thisSearch) return;
+        const foundAge = assessRes.data?.[0]?.age || fallRes.data?.[0]?.age;
+        if (foundAge) setAge(foundAge);
+      }
+      fetchPatientRadiationLogs(data.id, thisSearch);
     } catch (err) {}
   }
 
-  async function fetchPatientRadiationLogs(pid: string) {
+  async function fetchPatientRadiationLogs(pid: string, searchTag?: string) {
     if (editLogId) return; // Never overwrite baseline in edit mode
     const { data } = await supabase
       .from("radiation_exposure_logs")
       .select("*")
       .eq("patient_id", pid)
       .order("created_at", { ascending: false });
+
+    if (searchTag && latestSearchMrnRef.current !== searchTag) return;
 
     if (data && data.length > 0) {
       const latestPriorCumulative = Number(data[0].cumulative_dose || 0);
@@ -186,7 +235,6 @@ function RadiationExposureContent() {
     if (weightKg === "" || Number(weightKg) <= 0) errors.weightKg = "الوزن (كجم) مطلوب";
     if (!procedureName.trim()) errors.procedureName = "الاجراء مطلوب";
     if (!procedureLocation.trim()) errors.procedureLocation = "مكان الاجراء مطلوب";
-    if (!techSignature.trim()) errors.techSignature = "توقيع فني الاشعة مطلوب";
     if (radiationDose === "" || Number(radiationDose) <= 0)
       errors.radiationDose = "جرعة الاشعاع مطلوبة";
     if (cumulativeDose === "" || Number(cumulativeDose) <= 0)
@@ -254,6 +302,8 @@ function RadiationExposureContent() {
           .eq("id", currentPid);
       }
 
+      const effectiveTechSig = profile?.full_name || techSignature || "فني الأشعة";
+
       if (editLogId) {
         // UPDATE EXISTING RECORD (Keep exact cumulative dose as displayed)
         const { error: updateErr } = await supabase
@@ -266,13 +316,14 @@ function RadiationExposureContent() {
             procedure_location: procedureLocation,
             radiation_dose: doseVal,
             cumulative_dose: cumDoseVal,
-            tech_signature: techSignature,
+            tech_signature: effectiveTechSig,
           })
           .eq("id", editLogId);
 
         if (updateErr) throw new Error(`خطأ تحديث الجرعة: ${updateErr.message}`);
 
         playSuccessSound();
+        notifyFormSubmission({ formType: "radiation", patientId: currentPid });
         setPreviousCumulativeDose(Math.max(0, cumDoseVal - doseVal));
         setCumulativeDose(cumDoseVal);
         setLastSavedRecord({
@@ -302,7 +353,7 @@ function RadiationExposureContent() {
           procedure_location: procedureLocation,
           radiation_dose: doseVal,
           cumulative_dose: cumDoseVal,
-          tech_signature: techSignature,
+          tech_signature: effectiveTechSig,
         };
 
         let submissionId = null;
@@ -332,7 +383,7 @@ function RadiationExposureContent() {
             procedure_location: procedureLocation,
             radiation_dose: doseVal,
             cumulative_dose: cumDoseVal,
-            tech_signature: techSignature,
+            tech_signature: effectiveTechSig,
           })
           .select()
           .single();
@@ -340,6 +391,7 @@ function RadiationExposureContent() {
         if (logErr) throw new Error(`خطأ تسجيل الجرعة: ${logErr.message}`);
 
         playSuccessSound();
+        notifyFormSubmission({ formType: "radiation", patientId: currentPid });
         setEditLogId(savedLog?.id || submissionId);
         setPreviousCumulativeDose(Math.max(0, cumDoseVal - doseVal));
         setCumulativeDose(cumDoseVal);
@@ -424,8 +476,15 @@ function RadiationExposureContent() {
         </div>
       )}
 
-      {/* Main Form */}
-      <form onSubmit={handleSubmit} className="space-y-5 no-print">
+      <form
+        onSubmit={handleSubmit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") {
+            e.preventDefault();
+          }
+        }}
+        className="space-y-5 no-print"
+      >
         {/* SECTION 1: Patient Details */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -605,28 +664,32 @@ function RadiationExposureContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                توقيع فني الاشعة <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                disabled={isLocked}
-                value={techSignature}
-                onChange={(e) => setTechSignature(e.target.value)}
-                placeholder="اسم / توقيع فني الاشعة..."
-                className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                  isLocked
-                    ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
-                    : fieldErrors.techSignature
-                    ? "border-rose-400 bg-rose-50/40"
-                    : "border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                }`}
-              />
-              {fieldErrors.techSignature && (
-                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.techSignature}</p>
-              )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+            {/* Electronic Signature Card */}
+            <div className="p-3.5 rounded-xl border border-sky-100 bg-sky-50/30 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-sky-950 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
+                  <span>توقيع فني الأشعة</span>
+                </span>
+                <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-bold">
+                  {role === "technician" ? "فني الأشعة" : "موثق معتمد"}
+                </span>
+              </div>
+              <div className="bg-white p-2.5 rounded-lg border border-sky-200/80 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-slate-800 font-mono">
+                    {profile?.full_name || techSignature || "جاري التوثيق..."}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    تم التوثيق والاعتماد آلياً
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>معتمد</span>
+                </span>
+              </div>
             </div>
 
             <div>
@@ -711,15 +774,6 @@ function RadiationExposureContent() {
 
               <button
                 type="button"
-                onClick={handleUnlockForEdit}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
-              >
-                <Pencil className="w-4 h-4 text-amber-700" />
-                <span>تعديل</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={handleNewForm}
                 className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-[#1d8a98] hover:bg-[#167480] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
               >
@@ -793,7 +847,7 @@ function RadiationExposureContent() {
               </td>
               <td className="border border-black p-2 font-bold">{radiationDose || 0}</td>
               <td className="border border-black p-2 font-bold">{cumulativeDose || 0}</td>
-              <td className="border border-black p-2">{techSignature || "فني الأشعة"}</td>
+              <td className="border border-black p-2">{techSignature || profile?.full_name || "فني الأشعة"}</td>
             </tr>
           </tbody>
         </table>
@@ -809,7 +863,9 @@ function RadiationExposureContent() {
 export default function RadiationExposurePage() {
   return (
     <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">جاري التحميل...</div>}>
-      <RadiationExposureContent />
+      <FormRoleGuard allowedRoles={["technician"]} formTitle="حساب جرعات الأشعة — TRC.MRS">
+        <RadiationExposureContent />
+      </FormRoleGuard>
     </Suspense>
   );
 }

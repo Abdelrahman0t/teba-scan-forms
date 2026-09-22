@@ -72,16 +72,16 @@ export async function findPatientByMrn(supabase: SupabaseClient, searchMrn: stri
 
     if (exactMatch) return exactMatch;
 
-    // 2. Try prefix/contains match on any variant
-    const ilikeCondition = variants.map((v) => `mrn.ilike.%${v}%`).join(",");
-    const { data: fuzzyMatch } = await supabase
+    // 2. Try prefix match on any variant (starts with typed MRN)
+    const ilikeCondition = variants.map((v) => `mrn.ilike.${v}%`).join(",");
+    const { data: prefixMatch } = await supabase
       .from("patients")
       .select("*")
       .or(ilikeCondition)
       .limit(1)
       .maybeSingle();
 
-    return fuzzyMatch || null;
+    return prefixMatch || null;
   } catch (err) {
     console.error("findPatientByMrn error:", err);
     return null;

@@ -25,6 +25,24 @@ export function getCurrentTimeShort(): string {
 }
 
 /**
+ * Returns current 12-hour time split into { time: "HH:MM", period: "AM" | "PM", periodAr: "ص" | "م" }
+ */
+export function getCurrentTimeParts(): { time: string; period: "AM" | "PM"; periodAr: "ص" | "م" } {
+  const d = new Date();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const isPM = hours >= 12;
+  hours = hours % 12;
+  hours = hours ? hours : 12; // 0 becomes 12
+  const hStr = String(hours).padStart(2, "0");
+  return {
+    time: `${hStr}:${minutes}`,
+    period: isPM ? "PM" : "AM",
+    periodAr: isPM ? "م" : "ص",
+  };
+}
+
+/**
  * Formats any time string (e.g., "13:31", "13:31:00", "01:31") into 12-hour format with period ("01:31 م")
  */
 export function formatTime12(timeInput?: string | null): string {

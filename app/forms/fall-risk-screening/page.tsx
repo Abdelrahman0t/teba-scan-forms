@@ -19,7 +19,10 @@ import {
 
 import { getCurrentTimeShort, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
 import FormSubmitButton from "@/components/FormSubmitButton";
+import FormRoleGuard from "@/components/FormRoleGuard";
 import { findPatientByMrn } from "@/lib/numberUtils";
+import { useUser } from "@/lib/supabase/auth";
+import { notifyFormSubmission } from "@/lib/syncEvents";
 
 function playSuccessSound() {
   try {
@@ -86,6 +89,7 @@ function FallRiskScreeningContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const mrnInputRef = useRef<HTMLInputElement>(null);
+  const latestSearchMrnRef = useRef("");
 
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
@@ -117,10 +121,18 @@ function FallRiskScreeningContent() {
   const [wheelchairUsed, setWheelchairUsed] = useState(false);
   const [educationProvided, setEducationProvided] = useState(false);
 
-  // Screener Sign & Time
   const [screenerSignature, setScreenerSignature] = useState("");
   const [screeningDate, setScreeningDate] = useState(() => getCurrentDate());
   const [screeningTime, setScreeningTime] = useState(() => getCurrentTimeShort());
+
+  const { profile, role } = useUser();
+
+  // Auto-fill signature from authenticated user
+  useEffect(() => {
+    if (profile?.full_name && !screenerSignature) {
+      setScreenerSignature(profile.full_name);
+    }
+  }, [profile, screenerSignature]);
 
   const hasAnyRisk = Object.values(factors).some(Boolean);
 
@@ -145,11 +157,22 @@ function FallRiskScreeningContent() {
     }
   }, [age]);
 
-  // Load from editId if present
+  // Load from editId or mrn if present
   useEffect(() => {
     const id = searchParams.get("editId");
+    const mrnParam = searchParams.get("mrn");
+    const nameParam = searchParams.get("name");
+    const genderParam = searchParams.get("gender");
+    const ageParam = searchParams.get("age");
+
     if (id) {
       loadRecordForEdit(id);
+    } else if (mrnParam) {
+      setMrn(mrnParam);
+      if (nameParam) setPatientName(nameParam);
+      if (genderParam) setGender(genderParam as any);
+      if (ageParam) setAge(Number(ageParam) || "");
+      searchPatientByMrn(mrnParam);
     }
   }, [searchParams]);
 
@@ -193,11 +216,39 @@ function FallRiskScreeningContent() {
     }
   }
 
+  function clearPatientFields() {
+    setPatientId(null);
+    setPatientName("");
+    setGender("");
+    setAge("");
+    setFactors({
+      gait_disturbance: false,
+      use_mobility_aids: false,
+      bed_ridden: false,
+      mental_disability: false,
+      sensory_impairment: false,
+      child_under_15: false,
+    });
+    setFBadgeApplied(false);
+    setWheelchairUsed(false);
+    setEducationProvided(false);
+  }
+
   async function searchPatientByMrn(searchMrn: string) {
     const cleanMrn = searchMrn ? searchMrn.trim() : "";
-    if (!cleanMrn || editId) return;
+    if (editId) return;
+
+    latestSearchMrnRef.current = cleanMrn;
+    const thisSearch = cleanMrn;
+
+    if (!cleanMrn) {
+      clearPatientFields();
+      return;
+    }
+
     try {
       const patient = await findPatientByMrn(supabase, cleanMrn);
+      if (latestSearchMrnRef.current !== thisSearch) return;
 
       if (patient) {
         setPatientId(patient.id);
@@ -215,6 +266,8 @@ function FallRiskScreeningContent() {
             supabase.from("fall_risk_pediatric_assessments").select("age, gender").eq("patient_id", patient.id).order("created_at", { ascending: false }).limit(1),
             supabase.from("radiation_exposure_logs").select("age").eq("patient_id", patient.id).order("created_at", { ascending: false }).limit(1),
           ]);
+
+          if (latestSearchMrnRef.current !== thisSearch) return;
 
           if (!resolvedGender) {
             const cand = screenLogsRes.data?.[0]?.gender || assessRes.data?.[0]?.gender || fallAdultRes.data?.[0]?.gender || fallPedRes.data?.[0]?.gender;
@@ -235,6 +288,9 @@ function FallRiskScreeningContent() {
         if (resolvedAge !== null) {
           setAge(resolvedAge);
         }
+      } else {
+        // No match found -> clear all auto-filled fields
+        clearPatientFields();
       }
     } catch (err) {
       console.error("searchPatientByMrn error:", err);
@@ -247,7 +303,6 @@ function FallRiskScreeningContent() {
     if (!patientName.trim()) errors.patientName = "اسم المريض رباعي مطلوب";
     if (!gender) errors.gender = "يرجى تحديد الجنس";
     if (age === "" || Number(age) < 0) errors.age = "يرجى تحديد السن";
-    if (!screenerSignature.trim()) errors.screenerSignature = "توقيع القائم بالمسح مطلوب";
 
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -312,6 +367,8 @@ function FallRiskScreeningContent() {
           .eq("id", currentPid);
       }
 
+      const effectiveScreenerSig = profile?.full_name || screenerSignature || "طاقم التمريض";
+
       const payloadData = {
         mrn,
         patient_name: patientName,
@@ -324,7 +381,7 @@ function FallRiskScreeningContent() {
           wheelchair_used: wheelchairUsed,
           education_provided: educationProvided,
         },
-        screener_signature: screenerSignature,
+        screener_signature: effectiveScreenerSig,
         screening_date: screeningDate,
         screening_time: screeningTime,
       };
@@ -346,7 +403,7 @@ function FallRiskScreeningContent() {
             f_badge_applied: fBadgeApplied,
             wheelchair_used: wheelchairUsed,
             education_provided: educationProvided,
-            screener_signature: screenerSignature,
+            screener_signature: effectiveScreenerSig,
             screening_date: screeningDate,
             screening_time: sanitizeSqlTime(screeningTime),
           })
@@ -355,6 +412,7 @@ function FallRiskScreeningContent() {
         if (updateErr) throw new Error(`خطأ تحديث المسح: ${updateErr.message}`);
 
         playSuccessSound();
+        notifyFormSubmission({ formType: "fall_screen", patientId: currentPid });
         setLastSavedRecord({
           id: editId,
           patientName,
@@ -403,7 +461,7 @@ function FallRiskScreeningContent() {
             f_badge_applied: fBadgeApplied,
             wheelchair_used: wheelchairUsed,
             education_provided: educationProvided,
-            screener_signature: screenerSignature,
+            screener_signature: effectiveScreenerSig,
             screening_date: screeningDate,
             screening_time: sanitizeSqlTime(screeningTime),
           })
@@ -413,6 +471,7 @@ function FallRiskScreeningContent() {
         if (sErr) throw new Error(`خطأ حفظ المسح: ${sErr.message}`);
 
         playSuccessSound();
+        notifyFormSubmission({ formType: "fall_screen", patientId: currentPid });
         setEditId(savedScreening?.id || submissionId);
         setLastSavedRecord({
           id: savedScreening?.id || submissionId,
@@ -497,7 +556,15 @@ function FallRiskScreeningContent() {
       )}
 
       {/* Main Interactive Form */}
-      <form onSubmit={handleSubmit} className="space-y-5 no-print">
+      <form
+        onSubmit={handleSubmit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") {
+            e.preventDefault();
+          }
+        }}
+        className="space-y-5 no-print"
+      >
         {/* SECTION 1: Patient Header */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -720,31 +787,42 @@ function FallRiskScreeningContent() {
 
         {/* SECTION 3: Signatures & Timestamp */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                توقيع القائم بالمسح <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  disabled={isLocked}
-                  value={screenerSignature}
-                  onChange={(e) => setScreenerSignature(e.target.value)}
-                  placeholder="اسم وتوقيع القائم بالمسح..."
-                  className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                    isLocked
-                      ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
-                      : fieldErrors.screenerSignature
-                      ? "border-rose-400 bg-rose-50/40"
-                      : "border-slate-300 focus:border-[#1d8a98] focus:ring-2 focus:ring-[#1d8a98]/20"
-                  }`}
-                />
-                <UserCheck className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-[#1d8a98]" />
+              <span>التوثيق والاعتماد الإلكتروني الرسمي</span>
+            </h3>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+              توثيق آلي باسم المستخدم
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+            {/* Electronic Signature Card */}
+            <div className="p-3.5 rounded-xl border border-teal-100 bg-teal-50/30 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-teal-950 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#1d8a98]" />
+                  <span>توقيع القائم بالمسح</span>
+                </span>
+                <span className="text-[10px] bg-[#1d8a98]/10 text-[#1d8a98] px-2 py-0.5 rounded-full font-bold">
+                  {role === "nurse" ? "التمريض" : role === "technician" ? "فني الأشعة" : role === "radiologist" ? "أخصائي الأشعة" : "موثق معتمد"}
+                </span>
               </div>
-              {fieldErrors.screenerSignature && (
-                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.screenerSignature}</p>
-              )}
+              <div className="bg-white p-2.5 rounded-lg border border-teal-200/80 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-slate-800 font-mono">
+                    {profile?.full_name || screenerSignature || "جاري التوثيق..."}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    تم التوثيق والاعتماد آلياً
+                  </div>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>معتمد</span>
+                </span>
+              </div>
             </div>
 
             <div>
@@ -805,15 +883,6 @@ function FallRiskScreeningContent() {
               >
                 <Printer className="w-4 h-4 text-slate-600" />
                 <span>طباعة</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsLocked(false)}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
-              >
-                <Pencil className="w-4 h-4 text-amber-700" />
-                <span>تعديل</span>
               </button>
 
               <button
@@ -915,7 +984,7 @@ function FallRiskScreeningContent() {
 
         <div className="grid grid-cols-3 gap-4 text-xs font-bold pt-4 border-t border-black">
           <div>
-            توقيع القائم بالمسح: <span className="font-normal underline">{screenerSignature || "...................."}</span>
+            توقيع القائم بالمسح: <span className="font-normal underline">{screenerSignature || profile?.full_name || "...................."}</span>
           </div>
           <div>
             التاريخ: <span className="font-normal underline">{screeningDate}</span>
@@ -936,7 +1005,9 @@ function FallRiskScreeningContent() {
 export default function FallRiskScreeningPage() {
   return (
     <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">جاري التحميل...</div>}>
-      <FallRiskScreeningContent />
+      <FormRoleGuard allowedRoles={["nurse"]} formTitle="مسح مخاطر السقوط (الفحص المبدئي) — TRC.MRS">
+        <FallRiskScreeningContent />
+      </FormRoleGuard>
     </Suspense>
   );
 }

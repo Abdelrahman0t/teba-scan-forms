@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS public.patient_assessments (
     immunocompromised BOOLEAN DEFAULT FALSE,
     psychological_status VARCHAR(50),
     mental_status VARCHAR(50),
+    mental_status_details TEXT,
     abuse_neglect_signs BOOLEAN DEFAULT FALSE,
     abuse_neglect_details TEXT,
     lab_gfr NUMERIC(6,2),
@@ -248,6 +249,12 @@ CREATE TABLE IF NOT EXISTS public.patient_assessments (
 CREATE INDEX IF NOT EXISTS idx_assessment_patient ON public.patient_assessments(patient_id);
 ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS gender VARCHAR(20);
 ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS age INT;
+ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS psychological_status VARCHAR(50);
+ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS mental_status VARCHAR(50);
+ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS mental_status_details TEXT;
+ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS abuse_neglect_signs BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS abuse_neglect_details TEXT;
+ALTER TABLE public.patient_assessments ADD COLUMN IF NOT EXISTS plan_of_care JSONB DEFAULT '[]'::jsonb;
 
 -- FORM 7: Patient Transfer Form (TRC_ACT_PATIENT_TRANSFER - نموذج نقل المريض)
 CREATE TABLE IF NOT EXISTS public.patient_transfers (
@@ -417,3 +424,75 @@ CREATE TRIGGER update_patients_timestamp BEFORE UPDATE ON public.patients FOR EA
 
 DROP TRIGGER IF EXISTS update_submissions_timestamp ON public.form_submissions;
 CREATE TRIGGER update_submissions_timestamp BEFORE UPDATE ON public.form_submissions FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+
+-- ----------------------------------------------------------------------------
+-- 9. USER PROFILES & ROLES SYSTEM (SUPERIOR APPROVAL WORKFLOW)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    full_name TEXT NOT NULL,
+    phone VARCHAR(30) UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role VARCHAR(50) NOT NULL CHECK (role IN ('nurse', 'technician', 'radiologist', 'admission')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Ensure table works standalone (unlinked from external auth.users email service)
+ALTER TABLE public.user_profiles DROP CONSTRAINT IF EXISTS user_profiles_id_fkey;
+ALTER TABLE public.user_profiles ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
+-- Ensure columns exist if table was previously created
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS username VARCHAR(50);
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
+
+-- Ensure phone & username are unique
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_phone ON public.user_profiles(phone);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_username ON public.user_profiles(LOWER(username));
+
+-- Ensure form_submissions has status and completed_sections columns
+ALTER TABLE public.form_submissions ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'completed';
+ALTER TABLE public.form_submissions ADD COLUMN IF NOT EXISTS completed_sections TEXT[];
+
+-- RLS for user_profiles
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public select user_profiles" ON public.user_profiles;
+DROP POLICY IF EXISTS "Allow public insert user_profiles" ON public.user_profiles;
+DROP POLICY IF EXISTS "Allow public update user_profiles" ON public.user_profiles;
+
+CREATE POLICY "Allow public select user_profiles" ON public.user_profiles FOR SELECT USING (true);
+CREATE POLICY "Allow public insert user_profiles" ON public.user_profiles FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update user_profiles" ON public.user_profiles FOR UPDATE USING (true);
+
+-- ================================================================
+-- SUPABASE REALTIME REPLICATION (Safe & Idempotent)
+-- ================================================================
+DO $$
+DECLARE
+  tbl text;
+  tables text[] := ARRAY[
+    'patients',
+    'form_submissions',
+    'radiation_exposure_logs',
+    'health_education_assessments',
+    'fall_risk_screenings',
+    'fall_risk_adult_assessments',
+    'fall_risk_pediatric_assessments',
+    'patient_assessments',
+    'patient_transfers'
+  ];
+BEGIN
+  FOREACH tbl IN ARRAY tables LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = tbl
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', tbl);
+    END IF;
+  END LOOP;
+END $$;

@@ -18,11 +18,21 @@ import {
   Activity,
   ArrowRightLeft,
   Users,
+  Lock,
+  Stethoscope,
+  Info as InfoIcon,
+  Loader2,
+  AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 
-import { getCurrentTimeShort, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
+import { getCurrentTimeShort, getCurrentTimeParts, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
 import FormSubmitButton from "@/components/FormSubmitButton";
+import FormRoleGuard from "@/components/FormRoleGuard";
 import { findPatientByMrn } from "@/lib/numberUtils";
+import { useUser } from "@/lib/supabase/auth";
+import { notifyFormSubmission } from "@/lib/syncEvents";
+import { getFormStatusInfo } from "@/lib/formStatus";
 
 function playSuccessSound() {
   try {
@@ -161,6 +171,7 @@ function PatientTransferContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const mrnInputRef = useRef<HTMLInputElement>(null);
+  const latestSearchMrnRef = useRef("");
 
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
@@ -170,28 +181,93 @@ function PatientTransferContent() {
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
+  const [searchMrnInput, setSearchMrnInput] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<{
+    type: "idle" | "loading" | "success" | "warning" | "error" | "info";
+    message: string;
+  } | null>(null);
+
   // Patient Info
   const [mrn, setMrn] = useState("");
   const [patientName, setPatientName] = useState("");
   const [patientId, setPatientId] = useState<string | null>(null);
+  const [gender, setGender] = useState<"ذكر" | "أنثى" | "">("");
+  const [age, setAge] = useState<number | "">("");
 
   // Transfer Route Details
   const [transferDate, setTransferDate] = useState(() => getCurrentDate());
-  const [transferTime, setTransferTime] = useState(() => getCurrentTimeShort());
-  const [transferPeriod, setTransferPeriod] = useState<"AM" | "PM">("AM");
+  const [transferTime, setTransferTime] = useState(() => getCurrentTimeParts().time);
+  const [transferPeriod, setTransferPeriod] = useState<"AM" | "PM">(() => getCurrentTimeParts().period);
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
   const [transferReason, setTransferReason] = useState("");
+
+  function handleTransferTimeChange(val: string) {
+    let cleaned = val;
+    if (/pm|م|مساء/i.test(cleaned)) {
+      setTransferPeriod("PM");
+      cleaned = cleaned.replace(/pm|م|مساء/gi, "").trim();
+    } else if (/am|ص|صباح/i.test(cleaned)) {
+      setTransferPeriod("AM");
+      cleaned = cleaned.replace(/am|ص|صباح/gi, "").trim();
+    }
+    setTransferTime(cleaned);
+  }
 
   // 11 RSTP Scores (0, 1, 2) - Empty initially so nothing is pre-selected
   const [scores, setScores] = useState<{ [key: string]: number | null }>({});
 
   // Transfer Instructions & Signatures
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [transferInstructions, setTransferInstructions] = useState("");
   const [receivingNurseSignature, setReceivingNurseSignature] = useState("");
   const [receivingPhysicianSignature, setReceivingPhysicianSignature] = useState("");
   const [receivingDate, setReceivingDate] = useState(() => getCurrentDate());
   const [receivingTime, setReceivingTime] = useState(() => getCurrentTimeShort());
+
+  const { profile, role, isAdmin } = useUser();
+
+  // Auto-fill signatures from authenticated user according to role
+  useEffect(() => {
+    if (profile?.full_name) {
+      if ((role === "radiologist" || isAdmin) && !receivingPhysicianSignature && !editId) {
+        setReceivingPhysicianSignature(profile.full_name);
+      }
+      if ((role === "nurse" || isAdmin) && !receivingNurseSignature) {
+        setReceivingNurseSignature(profile.full_name);
+      }
+    }
+  }, [profile?.full_name, role, isAdmin, editId, receivingPhysicianSignature, receivingNurseSignature]);
+
+  // Safety Checklist (تم / لا ينطبق / غير محدد)
+  const SAFETY_ITEMS = [
+    "إبلاغ المريض / ذويه وشرح سبب وطريقة النقل والرد على استفساراتهم",
+    "التحقق من تثبيت جميع الأنابيب والوصلات ومحاليل الوريد على الحوامل بإحكام",
+    "التأكد من خلو المريض من الموانع المعدنية (خاصة إذا كان الفحص رنين مغناطيسي MRI)",
+    "تم مراعاة الحفاظ على خصوصية المريض وتغطيته أثناء النقل",
+  ] as const;
+  const [safetyChecklist, setSafetyChecklist] = useState<{ [key: string]: "تم" | "لا ينطبق" | "" }>({});
+
+  // Required Exams
+  const EXAM_OPTIONS = ["X-Ray", "MRI", "CT", "Doppler", "Echo", "U/S"] as const;
+  const [requiredExams, setRequiredExams] = useState<string[]>([]);
+  const [otherExam, setOtherExam] = useState("");
+
+  // From / To preset options
+  const FROM_OPTIONS = [
+    "طوارئ مستشفى خارجي",
+    "سيارة إسعاف",
+    "الاستقبال الخارجي",
+  ];
+  const TO_OPTIONS = [
+    "غرفة X-Ray",
+    "غرفة MRI",
+    "غرفة CT",
+    "غرفة Doppler",
+    "غرفة Echo",
+    "غرفة U/S",
+  ];
 
   // Total RSTP Score Calculation
   const totalRstpScore: number = useMemo(() => {
@@ -205,8 +281,8 @@ function PatientTransferContent() {
         group: "0",
         vehicle_ar: "كرسي متحرك – مشي",
         vehicle_en: "Wheelchair – Walking",
-        staff_ar: "مساعد تمريض (Nurse Aid)",
-        staff_en: "Nurse Aid",
+        staff_ar: "مفرد خدمات معاونة",
+        staff_en: "auxiliary service",
         continuousMonitoring: false,
       };
     } else if (totalRstpScore <= 6) {
@@ -223,18 +299,33 @@ function PatientTransferContent() {
         group: "II",
         vehicle_ar: "سرير – حامل متحرك (ترولي)",
         vehicle_en: "Bed – Trolley",
-        staff_ar: "مساعد تمريض + ممرضة + طبيب (Nurse Aid, Nurse and Physician)",
-        staff_en: "Nurse Aid, Nurse and Physician",
+        staff_ar: "مساعد تمريض + ممرضة + طبيب الاشعة (Nurse Aid, Nurse and radiologist)",
+        staff_en: "Nurse Aid, Nurse and radiologist",
         continuousMonitoring: true,
       };
     }
   }, [totalRstpScore]);
 
-  // Load from editId if present
+  const canEditRadiologist = isAdmin || role === "radiologist";
+  const canEditNurse = isAdmin || role === "nurse";
+  const isNurse = role === "nurse" && !isAdmin;
+  const isRadiologist = role === "radiologist" || isAdmin;
+  const isDoctorDisabled = isLocked || !canEditRadiologist;
+  const isNurseChecklistDisabled = isLocked || !canEditNurse;
+  const isTransferInitiated = Boolean(editId && (receivingPhysicianSignature || totalRstpScore > 0));
+
+  // Load from editId or mrn if present
   useEffect(() => {
     const id = searchParams.get("editId");
+    const mrnParam = searchParams.get("mrn");
+    const nameParam = searchParams.get("name");
+
     if (id) {
       loadRecordForEdit(id);
+    } else if (mrnParam) {
+      setMrn(mrnParam);
+      if (nameParam) setPatientName(nameParam);
+      searchPatientByMrn(mrnParam);
     }
   }, [searchParams]);
 
@@ -250,12 +341,38 @@ function PatientTransferContent() {
       if (error) throw error;
       if (data) {
         setEditId(data.id);
+        if (data.submission_id) setSubmissionId(data.submission_id);
         setPatientId(data.patient_id);
         setPatientName(data.patients?.full_name || "");
         setMrn(data.patients?.mrn || "");
-        if (data.transfer_date) setTransferDate(data.transfer_date);
-        if (data.transfer_time) setTransferTime(formatTime12(data.transfer_time));
-        if (data.transfer_period) setTransferPeriod(data.transfer_period as any);
+        if (data.transfer_time) {
+          let t = data.transfer_time.trim();
+          let period: "AM" | "PM" = data.transfer_period === "PM" ? "PM" : "AM";
+          if (/pm|م|مساء/i.test(t)) {
+            period = "PM";
+            t = t.replace(/pm|م|مساء/gi, "").trim();
+          } else if (/am|ص|صباح/i.test(t)) {
+            period = "AM";
+            t = t.replace(/am|ص|صباح/gi, "").trim();
+          }
+          const parts = t.split(":");
+          if (parts.length >= 2) {
+            let h = parseInt(parts[0], 10);
+            const m = parts[1].padStart(2, "0").slice(0, 2);
+            if (!isNaN(h)) {
+              if (h >= 12) {
+                period = "PM";
+                if (h > 12) h -= 12;
+              } else if (h === 0) {
+                h = 12;
+                period = "AM";
+              }
+              t = `${String(h).padStart(2, "0")}:${m}`;
+            }
+          }
+          setTransferTime(t);
+          setTransferPeriod(data.transfer_period || period);
+        }
         setFromLocation(data.from_location || "");
         setToLocation(data.to_location || "");
         setTransferReason(data.transfer_reason || "");
@@ -277,6 +394,9 @@ function PatientTransferContent() {
         setReceivingPhysicianSignature(data.receiving_physician_signature || "");
         if (data.receiving_date) setReceivingDate(data.receiving_date);
         if (data.receiving_time) setReceivingTime(formatTime12(data.receiving_time));
+        if (data.safety_checklist) setSafetyChecklist(data.safety_checklist);
+        if (data.required_exams) setRequiredExams(data.required_exams);
+        if (data.other_exam) setOtherExam(data.other_exam);
         setIsLocked(false);
       }
     } catch (err: any) {
@@ -286,14 +406,145 @@ function PatientTransferContent() {
     }
   }
 
-  async function searchPatientByMrn(searchMrn: string) {
-    if (!searchMrn.trim() || editId) return;
-    try {
-      const data = await findPatientByMrn(supabase, searchMrn);
+  function clearPatientFields() {
+    setPatientId(null);
+    setPatientName("");
+  }
 
-      if (data) {
-        setPatientId(data.id);
-        setPatientName(data.full_name || "");
+  function handleResetSearch() {
+    clearPatientFields();
+    setMrn("");
+    setSearchMrnInput("");
+    setSearchStatus(null);
+    setEditId(null);
+    setSubmissionId(null);
+    setLastSavedRecord(null);
+    setIsLocked(false);
+  }
+
+  async function searchPatientByMrn(searchMrn: string) {
+    const cleanMrn = searchMrn ? searchMrn.trim() : "";
+    if (editId) return;
+
+    latestSearchMrnRef.current = cleanMrn;
+    const thisSearch = cleanMrn;
+
+    if (!cleanMrn) {
+      clearPatientFields();
+      setSearchStatus(null);
+      return;
+    }
+
+    // NON-DOCTOR (Nurse):
+    // Cannot create a new transfer model from scratch; can only complete checklist for existing doctor's transfer!
+    if (!canEditRadiologist) {
+      setSearchLoading(true);
+      setSearchStatus({ type: "loading", message: "جاري البحث عن نموذج نقل غير مكتمل لهذا المريض..." });
+      clearPatientFields();
+
+      try {
+        const patient = await findPatientByMrn(supabase, cleanMrn);
+        if (latestSearchMrnRef.current !== thisSearch) return;
+
+        if (!patient) {
+          clearPatientFields();
+          setSearchStatus({
+            type: "error",
+            message: `لم يتم العثور على أي مريض مسجل برقم الملف الطبي: (${cleanMrn})`,
+          });
+          return;
+        }
+
+        // Query all existing transfers for this patient
+        const { data: transfers, error: tErr } = await supabase
+          .from("patient_transfers")
+          .select("*, patients(id, full_name, mrn)")
+          .eq("patient_id", patient.id)
+          .order("created_at", { ascending: false });
+
+        if (latestSearchMrnRef.current !== thisSearch) return;
+        if (tErr) throw tErr;
+
+        if (!transfers || transfers.length === 0) {
+          clearPatientFields();
+          setSearchStatus({
+            type: "warning",
+            message: `المريض (${patient.full_name}) ليس لديه أي نموذج نقل مسجل من قِبل طبيب الأشعة بعد. يجب على طبيب الأشعة إنشاء النموذج وتقييم مقياس RSTP أولاً.`,
+          });
+          return;
+        }
+
+        // Filter for incomplete models only
+        const incompleteList = transfers.filter((t) => {
+          const s = getFormStatusInfo({ ...t, formType: "transfer" });
+          return !s.isComplete;
+        });
+
+        if (incompleteList.length === 0) {
+          clearPatientFields();
+          setSearchStatus({
+            type: "info",
+            message: `نموذج نقل المريض الخاص بالمريض (${patient.full_name}) مكتمل بالفعل وموقع من كافة الأطراف (طبيب الأشعة والتمريض). لا توجد نماذج غير مكتملة بحاجة إلى استكمال.`,
+          });
+          return;
+        }
+
+        // Target the incomplete transfer where the nurse signature/checklist is missing, or the most recent one
+        const target = incompleteList.find((t) => {
+          const s = getFormStatusInfo({ ...t, formType: "transfer" });
+          return role ? s.missingRoles.includes(role as any) : true;
+        }) || incompleteList[0];
+
+        await loadRecordForEdit(target.id);
+        setSearchStatus({
+          type: "success",
+          message: `تم العثور على نموذج غير مكتمل للمريض (${patient.full_name || cleanMrn}). تم تحميل بيانات النقل بنجاح، يمكنك الآن استكمال وتوثيق قائمة الأمان.`,
+        });
+      } catch (err: any) {
+        console.error("searchPatientByMrn error:", err);
+        clearPatientFields();
+        setSearchStatus({
+          type: "error",
+          message: `حدث خطأ أثناء البحث: ${err.message || "تعذر إكمال البحث"}`,
+        });
+      } finally {
+        setSearchLoading(false);
+      }
+      return;
+    }
+
+    // DOCTOR / ADMIN:
+    try {
+      const data = await findPatientByMrn(supabase, cleanMrn);
+      if (latestSearchMrnRef.current !== thisSearch) return;
+
+      if (!data) {
+        clearPatientFields();
+        return;
+      }
+
+      setPatientId(data.id);
+      setPatientName(data.full_name || "");
+      if (data.gender) setGender(data.gender as any);
+      if (data.age) setAge(data.age);
+
+      // Check if patient already has an INCOMPLETE transfer record to resume
+      const { data: transfers } = await supabase
+        .from("patient_transfers")
+        .select("id, receiving_nurse_signature, receiving_physician_signature, doctor_signature")
+        .eq("patient_id", data.id)
+        .order("created_at", { ascending: false });
+
+      if (transfers && transfers.length > 0) {
+        const incompleteList = transfers.filter((t) => {
+          const s = getFormStatusInfo({ ...t, formType: "transfer" });
+          return !s.isComplete;
+        });
+
+        // Only load if there is an incomplete transfer; never auto-load a completed one!
+        if (incompleteList.length > 0) {
+          loadRecordForEdit(incompleteList[0].id);
+        }
       }
     } catch (err) {}
   }
@@ -302,11 +553,13 @@ function PatientTransferContent() {
     const errors: { [key: string]: string } = {};
     if (!mrn.trim()) errors.mrn = "رقم الملف الطبي مطلوب";
     if (!patientName.trim()) errors.patientName = "اسم المريض رباعي مطلوب";
-    if (!fromLocation.trim()) errors.fromLocation = "مكان النقل (من) مطلوب";
-    if (!toLocation.trim()) errors.toLocation = "وجهة النقل (إلى) مطلوبة";
-    if (!transferReason.trim()) errors.transferReason = "سبب النقل مطلوب";
-    if (!receivingNurseSignature.trim())
-      errors.receivingNurseSignature = "توقيع الممرض/ة المحول له المريض مطلوب";
+    
+    // Route & reason are required when doctor/admin fills the transfer model
+    if (canEditRadiologist) {
+      if (!fromLocation.trim()) errors.fromLocation = "مكان النقل (من) مطلوب";
+      if (!toLocation.trim()) errors.toLocation = "وجهة النقل (إلى) مطلوبة";
+      if (!transferReason.trim()) errors.transferReason = "سبب النقل مطلوب";
+    }
 
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -353,6 +606,20 @@ function PatientTransferContent() {
           .eq("id", currentPid);
       }
 
+      let effectiveNurseSig = receivingNurseSignature || "";
+      if (role === "nurse" && profile?.full_name) {
+        effectiveNurseSig = profile.full_name;
+      } else if (!effectiveNurseSig && isAdmin) {
+        effectiveNurseSig = profile?.full_name || "";
+      }
+
+      let effectivePhysicianSig = receivingPhysicianSignature || "";
+      if (role === "radiologist" && profile?.full_name) {
+        effectivePhysicianSig = profile.full_name;
+      } else if (!effectivePhysicianSig && isAdmin) {
+        effectivePhysicianSig = profile?.full_name || "";
+      }
+
       const payloadData = {
         mrn,
         patient_name: patientName,
@@ -369,8 +636,11 @@ function PatientTransferContent() {
         recommended_staff: transportInterpretation.staff_ar,
         continuous_monitoring: transportInterpretation.continuousMonitoring,
         transfer_instructions: transferInstructions,
-        receiving_nurse_signature: receivingNurseSignature,
-        receiving_physician_signature: receivingPhysicianSignature,
+        safety_checklist: safetyChecklist,
+        required_exams: requiredExams,
+        other_exam: otherExam,
+        receiving_nurse_signature: effectiveNurseSig,
+        receiving_physician_signature: effectivePhysicianSig,
         receiving_date: receivingDate,
         receiving_time: receivingTime,
       };
@@ -380,7 +650,7 @@ function PatientTransferContent() {
           .from("patient_transfers")
           .update({
             transfer_date: transferDate,
-            transfer_time: sanitizeSqlTime(transferTime),
+            transfer_time: sanitizeSqlTime(`${transferTime} ${transferPeriod}`),
             transfer_period: transferPeriod,
             from_location: fromLocation,
             to_location: toLocation,
@@ -402,8 +672,11 @@ function PatientTransferContent() {
             recommended_staff: transportInterpretation.staff_ar,
             continuous_monitoring_applicable: transportInterpretation.continuousMonitoring,
             transfer_instructions: transferInstructions,
-            receiving_nurse_signature: receivingNurseSignature,
-            receiving_physician_signature: receivingPhysicianSignature,
+            safety_checklist: safetyChecklist,
+            required_exams: requiredExams,
+            other_exam: otherExam,
+            receiving_nurse_signature: effectiveNurseSig,
+            receiving_physician_signature: effectivePhysicianSig,
             receiving_date: receivingDate,
             receiving_time: sanitizeSqlTime(receivingTime),
           })
@@ -411,7 +684,15 @@ function PatientTransferContent() {
 
         if (updateErr) throw new Error(`خطأ تحديث نموذج النقل: ${updateErr.message}`);
 
+        if (submissionId) {
+          await supabase
+            .from("form_submissions")
+            .update({ data: payloadData })
+            .eq("id", submissionId);
+        }
+
         playSuccessSound();
+        notifyFormSubmission({ formType: "transfer", patientId: currentPid });
         setLastSavedRecord({
           id: editId,
           patientName,
@@ -448,11 +729,11 @@ function PatientTransferContent() {
             submission_id: submissionId,
             patient_id: currentPid,
             transfer_date: transferDate,
-            transfer_time: sanitizeSqlTime(transferTime),
+            transfer_time: sanitizeSqlTime(`${transferTime} ${transferPeriod}`),
             transfer_period: transferPeriod,
-            from_location: fromLocation,
-            to_location: toLocation,
-            transfer_reason: transferReason,
+            from_location: fromLocation || "غير محدد",
+            to_location: toLocation || "غير محدد",
+            transfer_reason: transferReason || "غير محدد",
             hemodynamic_score: scores.hemodynamic ?? 0,
             arrhythmias_score: scores.arrhythmias ?? 0,
             ecg_monitoring_score: scores.ecg_monitoring ?? 0,
@@ -470,8 +751,11 @@ function PatientTransferContent() {
             recommended_staff: transportInterpretation.staff_ar,
             continuous_monitoring_applicable: transportInterpretation.continuousMonitoring,
             transfer_instructions: transferInstructions,
-            receiving_nurse_signature: receivingNurseSignature,
-            receiving_physician_signature: receivingPhysicianSignature,
+            safety_checklist: safetyChecklist,
+            required_exams: requiredExams,
+            other_exam: otherExam,
+            receiving_nurse_signature: effectiveNurseSig,
+            receiving_physician_signature: effectivePhysicianSig,
             receiving_date: receivingDate,
             receiving_time: sanitizeSqlTime(receivingTime),
           })
@@ -481,6 +765,7 @@ function PatientTransferContent() {
         if (tErr) throw new Error(`خطأ حفظ نموذج النقل: ${tErr.message}`);
 
         playSuccessSound();
+        notifyFormSubmission({ formType: "transfer", patientId: currentPid });
         setEditId(savedTransfer?.id || submissionId);
         setLastSavedRecord({
           id: savedTransfer?.id || submissionId,
@@ -510,12 +795,20 @@ function PatientTransferContent() {
     setFromLocation("");
     setToLocation("");
     setTransferReason("");
+    setSubmissionId(null);
     setScores({});
     setTransferInstructions("");
     setReceivingNurseSignature("");
     setReceivingPhysicianSignature("");
+    const newTime = getCurrentTimeParts();
     setTransferDate(getCurrentDate());
-    setTransferTime(getCurrentTimeShort());
+    setTransferTime(newTime.time);
+    setTransferPeriod(newTime.period);
+    setSafetyChecklist({});
+    setRequiredExams([]);
+    setOtherExam("");
+    setSearchMrnInput("");
+    setSearchStatus(null);
     setFieldErrors({});
     setErrorMsg("");
     setTimeout(() => mrnInputRef.current?.focus(), 50);
@@ -557,10 +850,160 @@ function PatientTransferContent() {
         </div>
       )}
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-5 no-print">
+      {/* Role Banner */}
+      {isNurse ? (
+        <div className="bg-blue-50/90 border border-blue-200 p-4 rounded-2xl flex items-start gap-3 shadow-xs no-print">
+          <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <h4 className="text-xs font-bold text-blue-950">
+              {receivingPhysicianSignature
+                ? `تم اعتماد تقييم النقل الطبي من قِبل طبيب الأشعة: ${receivingPhysicianSignature}`
+                : "نموذج نقل المريض السريري ومقياس RSTP مخصص لطبيب الأشعة"}
+            </h4>
+            <p className="text-[11px] text-blue-700 leading-relaxed">
+              دور طاقم التمريض: استكمال وتأكيد <strong>متطلبات الأمان والتأكيد (Safety Checklist)</strong> بالأسفل وتوثيق استلام التمريض. بقية النموذج للقراءة فقط.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-purple-50/80 border border-purple-200 p-3 rounded-2xl flex items-center justify-between no-print text-xs">
+          <div className="flex items-center gap-2 text-purple-900 font-bold">
+            <Stethoscope className="w-4 h-4 text-purple-600 shrink-0" />
+            <span>طبيب الأشعة: قم بتحديد المسار وتقييم مقياس RSTP واعتماد وسيلة النقل. قائمة الأمان مخصصة لاستلام التمريض.</span>
+          </div>
+        </div>
+      )}
+
+      <form
+        onSubmit={handleSubmit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") {
+            e.preventDefault();
+          }
+        }}
+        className="space-y-5 no-print"
+      >
         {/* SECTION 1: Patient & Route Details */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📋</span>
+              <h3 className={`text-xs sm:text-sm font-bold ${isDoctorDisabled ? "text-slate-500" : "text-slate-800"}`}>
+                بيانات المريض ومسار النقل
+              </h3>
+            </div>
+            <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1 ${
+              isDoctorDisabled ? "bg-slate-200 text-slate-600 border-slate-300" : "bg-purple-100 text-purple-800 border-purple-200"
+            }`}>
+              {isDoctorDisabled && <Lock className="w-3 h-3" />}
+              <span>{isDoctorDisabled ? "غير متاح لدورك (خاص بطبيب الأشعة)" : "خاص بطبيب الأشعة 🩺"}</span>
+            </span>
+          </div>
+
+          {/* EXACT SEARCH BAR AS IN PATIENT-ASSESSMENT WITH FULL OPACITY & CRISP VISIBILITY */}
+          {isDoctorDisabled && !searchParams.get("editId") && (
+            <div className="space-y-3">
+              {!editId ? (
+                <div className="bg-sky-50 border border-sky-300 p-4 rounded-2xl space-y-3 text-xs text-sky-950 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Search className="w-4 h-4 text-sky-600 shrink-0" />
+                      <span className="font-semibold text-sky-950 text-xs sm:text-sm">
+                        لتحميل واستكمال نموذج نقل مريض غير مكتمل، أدخل رقم الملف الطبي (MRN):
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        value={searchMrnInput}
+                        onChange={(e) => setSearchMrnInput(e.target.value)}
+                        placeholder="رقم الملف الطبي..."
+                        className="px-3.5 py-2 border border-sky-300 focus:border-sky-500 rounded-xl text-xs bg-white text-slate-900 outline-none w-full sm:w-48 font-mono shadow-2xs font-bold placeholder:text-slate-400"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            searchPatientByMrn(searchMrnInput);
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={searchLoading || !searchMrnInput.trim()}
+                        onClick={() => searchPatientByMrn(searchMrnInput)}
+                        className="px-3.5 py-2 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        {searchLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Search className="w-3.5 h-3.5" />
+                        )}
+                        <span>بحث</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {searchStatus && (
+                    <div
+                      className={`p-3 rounded-xl border text-xs flex items-center gap-2 font-medium transition-all ${
+                        searchStatus.type === "loading"
+                          ? "bg-sky-100/80 text-sky-900 border-sky-300"
+                          : searchStatus.type === "error"
+                          ? "bg-rose-50 text-rose-800 border-rose-200"
+                          : searchStatus.type === "warning"
+                          ? "bg-amber-50 text-amber-800 border-amber-200"
+                          : searchStatus.type === "info"
+                          ? "bg-blue-50 text-blue-800 border-blue-200"
+                          : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                      }`}
+                    >
+                      {searchStatus.type === "loading" && <Loader2 className="w-4 h-4 animate-spin text-sky-700 shrink-0" />}
+                      {searchStatus.type === "error" && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                      {searchStatus.type === "warning" && <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />}
+                      {searchStatus.type === "info" && <InfoIcon className="w-4 h-4 text-blue-600 shrink-0" />}
+                      {searchStatus.type === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
+                      <span className="font-semibold">{searchStatus.message}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-emerald-950 shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <div className="font-extrabold text-emerald-950 flex items-center gap-2">
+                        <span>تم تحميل نموذج نقل المريض غير المكتمل</span>
+                        <span className="font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">
+                          MRN: {mrn}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 font-medium">
+                        المريض: <strong>{patientName}</strong> {transportInterpretation?.vehicle_ar ? `• وسيلة النقل: ${transportInterpretation.vehicle_ar}` : ""} • يمكنك الآن استكمال الأقسام المخصصة لدورك وحفظ النموذج.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetSearch}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>بحث عن مريض آخر</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className={`space-y-4 transition-all ${isDoctorDisabled ? "opacity-95 pointer-events-none" : ""}`}>
+            {isDoctorDisabled && !editId && (
+              <div className="p-3 bg-slate-100/80 rounded-xl border border-slate-200 text-slate-500 text-xs flex items-center gap-2 font-medium">
+                <InfoIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                <span>
+                  بيانات المريض ومسار النقل خاصة بطبيب الأشعة (للقراءة فقط). يرجى استخدام شريط البحث بالأعلى لاستدعاء المريض واستكمال قائمة الأمان.
+                </span>
+              </div>
+            )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -570,7 +1013,7 @@ function PatientTransferContent() {
                 <input
                   ref={mrnInputRef}
                   type="text"
-                  disabled={isLocked}
+                  disabled={isDoctorDisabled}
                   value={mrn}
                   onChange={(e) => {
                     setMrn(e.target.value);
@@ -578,7 +1021,7 @@ function PatientTransferContent() {
                   }}
                   placeholder="رقم الملف الطبي..."
                   className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
-                    isLocked
+                    isDoctorDisabled
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
                       ? "border-rose-400 bg-rose-50/40"
@@ -598,12 +1041,12 @@ function PatientTransferContent() {
               </label>
               <input
                 type="text"
-                disabled={isLocked}
+                disabled={isDoctorDisabled}
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
                 placeholder="اسم المريض رباعي..."
                 className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                  isLocked
+                  isDoctorDisabled
                     ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                     : fieldErrors.patientName
                     ? "border-rose-400 bg-rose-50/40"
@@ -621,10 +1064,12 @@ function PatientTransferContent() {
               <label className="block text-xs font-bold text-slate-700 mb-1.5">تاريخ النقل</label>
               <input
                 type="date"
-                disabled={isLocked}
+                disabled={isDoctorDisabled}
                 value={transferDate}
                 onChange={(e) => setTransferDate(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm bg-white"
+                className={`w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm ${
+                  isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                }`}
               />
             </div>
 
@@ -633,16 +1078,21 @@ function PatientTransferContent() {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  disabled={isLocked}
+                  disabled={isDoctorDisabled}
                   value={transferTime}
-                  onChange={(e) => setTransferTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono"
+                  onChange={(e) => handleTransferTimeChange(e.target.value)}
+                  placeholder="07:06"
+                  className={`w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono ${
+                    isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                  }`}
                 />
                 <select
-                  disabled={isLocked}
+                  disabled={isDoctorDisabled}
                   value={transferPeriod}
                   onChange={(e) => setTransferPeriod(e.target.value as any)}
-                  className="px-2 py-2 border border-slate-300 rounded-xl text-xs bg-white"
+                  className={`px-2.5 py-2 border border-slate-300 rounded-xl text-xs font-medium ${
+                    isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                  }`}
                 >
                   <option value="AM">صباحاً (AM)</option>
                   <option value="PM">مساءً (PM)</option>
@@ -654,16 +1104,21 @@ function PatientTransferContent() {
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 من (From) <span className="text-rose-500">*</span>
               </label>
-              <input
-                type="text"
-                disabled={isLocked}
+              <select
+                disabled={isDoctorDisabled}
                 value={fromLocation}
                 onChange={(e) => setFromLocation(e.target.value)}
-                placeholder="مثال: قسم الطوارئ / العناية..."
-                className={`w-full px-3 py-2 border rounded-xl text-xs sm:text-sm ${
+                className={`w-full px-3 py-2 border rounded-xl text-xs sm:text-sm bg-white ${
+                  isDoctorDisabled ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed" :
                   fieldErrors.fromLocation ? "border-rose-400 bg-rose-50/40" : "border-slate-300"
                 }`}
-              />
+              >
+                <option value="">اختر مكان الإرسال...</option>
+                {FROM_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+              {fieldErrors.fromLocation && (
+                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.fromLocation}</p>
+              )}
             </div>
           </div>
 
@@ -672,16 +1127,21 @@ function PatientTransferContent() {
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 إلى (To) <span className="text-rose-500">*</span>
               </label>
-              <input
-                type="text"
-                disabled={isLocked}
+              <select
+                disabled={isDoctorDisabled}
                 value={toLocation}
                 onChange={(e) => setToLocation(e.target.value)}
-                placeholder="مثال: قسم الأشعة المقطعية..."
-                className={`w-full px-3 py-2 border rounded-xl text-xs sm:text-sm ${
+                className={`w-full px-3 py-2 border rounded-xl text-xs sm:text-sm bg-white ${
+                  isDoctorDisabled ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed" :
                   fieldErrors.toLocation ? "border-rose-400 bg-rose-50/40" : "border-slate-300"
                 }`}
-              />
+              >
+                <option value="">اختر وجهة النقل...</option>
+                {TO_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+              {fieldErrors.toLocation && (
+                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.toLocation}</p>
+              )}
             </div>
 
             <div>
@@ -690,20 +1150,71 @@ function PatientTransferContent() {
               </label>
               <input
                 type="text"
-                disabled={isLocked}
+                disabled={isDoctorDisabled}
                 value={transferReason}
                 onChange={(e) => setTransferReason(e.target.value)}
                 placeholder="أذكر سبب النقل..."
                 className={`w-full px-3 py-2 border rounded-xl text-xs sm:text-sm ${
-                  fieldErrors.transferReason ? "border-rose-400 bg-rose-50/40" : "border-slate-300"
+                  isDoctorDisabled
+                    ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
+                    : fieldErrors.transferReason
+                    ? "border-rose-400 bg-rose-50/40"
+                    : "border-slate-300 bg-white"
+                }`}
+              />
+            </div>
+          </div>
+
+          {/* Required Exams */}
+          <div className="pt-1">
+            <label className="block text-xs font-bold text-slate-700 mb-2">الفحوصات المطلوبة (اختياري)</label>
+            <div className="flex flex-wrap gap-2">
+              {EXAM_OPTIONS.map((exam) => {
+                const selected = requiredExams.includes(exam);
+                return (
+                  <button
+                    key={exam}
+                    type="button"
+                    disabled={isDoctorDisabled}
+                    onClick={() =>
+                      setRequiredExams((prev) =>
+                        selected ? prev.filter((e) => e !== exam) : [...prev, exam]
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                      selected
+                        ? "bg-purple-700 text-white border-purple-700"
+                        : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                    } ${isDoctorDisabled ? "cursor-not-allowed" : ""}`}
+                  >
+                    {exam}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-slate-500 font-medium shrink-0">أخرى:</span>
+              <input
+                type="text"
+                disabled={isDoctorDisabled}
+                value={otherExam}
+                onChange={(e) => setOtherExam(e.target.value)}
+                placeholder="...."
+                className={`flex-1 px-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none ${
+                  isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
                 }`}
               />
             </div>
           </div>
         </div>
+      </div>
 
         {/* SECTION 2: RSTP Live Interpretation Result Banner */}
-        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-3xl shadow-lg space-y-4">
+        <div className={`p-6 rounded-3xl shadow-lg space-y-4 transition-all ${
+          isDoctorDisabled
+            ? "bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-700 text-white shadow-md"
+            : "bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white"
+        }`}>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-white/10 pb-4">
             <div>
               <span className="text-xs text-blue-300 font-semibold block">نتيجة تقييم معدل الخطر عند نقل المريض</span>
@@ -733,7 +1244,7 @@ function PatientTransferContent() {
             </div>
 
             <div className="bg-white/10 p-3.5 rounded-2xl backdrop-blur-xs space-y-1">
-              <span className="text-blue-200 block text-[11px]">نموذج المتابعة المستمرة:</span>
+              <span className="text-blue-200 block text-[11px]"> المتابعة المستمرة:</span>
               <strong
                 className={`text-sm font-bold block ${
                   transportInterpretation.continuousMonitoring ? "text-amber-300" : "text-slate-300"
@@ -746,12 +1257,28 @@ function PatientTransferContent() {
         </div>
 
         {/* SECTION 3: 11 RSTP Parameters Checklist */}
-        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-          <div className="border-b border-slate-100 pb-2">
-            <h3 className="text-xs sm:text-sm font-bold text-slate-800">
+        <div className={`p-5 sm:p-6 rounded-2xl border shadow-xs space-y-4 transition-all ${
+          isDoctorDisabled
+            ? "bg-slate-50/90 border-slate-200 text-slate-800"
+            : "bg-white border-slate-200/80"
+        }`}>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className={`text-xs sm:text-sm font-bold ${isDoctorDisabled ? "text-slate-700" : "text-slate-800"}`}>
               دراسة الخطورة ومعدل الخطر عند نقل المريض (RSTP 11 Parameters)
             </h3>
+            <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1 ${
+              isDoctorDisabled ? "bg-slate-200 text-slate-600 border-slate-300" : "bg-purple-100 text-purple-800 border-purple-200"
+            }`}>
+              {isDoctorDisabled && <Lock className="w-3 h-3" />}
+              <span>{isDoctorDisabled ? "غير متاح لدورك (خاص بطبيب الأشعة)" : "خاص بطبيب الأشعة 🩺"}</span>
+            </span>
           </div>
+
+          {!canEditRadiologist && (
+            <p className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200">
+              ℹ️ تقييم معايير مقياس النقل الحرج (RSTP) مخصص لإدخال طبيب الأشعة (للقراءة فقط لدورك الحالي).
+            </p>
+          )}
 
           <div className="space-y-3 text-xs">
             {RSTP_PARAMETERS.map((param, pIdx) => {
@@ -780,13 +1307,13 @@ function PatientTransferContent() {
                         <button
                           key={opt.score}
                           type="button"
-                          disabled={isLocked}
+                          disabled={isDoctorDisabled}
                           onClick={() => setScores((prev) => ({ ...prev, [param.id]: opt.score }))}
                           className={`p-2.5 rounded-xl border text-right transition-all text-xs font-semibold ${
                             isSelected
                               ? "bg-blue-600 text-white border-blue-600 shadow-xs"
                               : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                          }`}
+                          } ${isDoctorDisabled ? "cursor-not-allowed pointer-events-none" : ""}`}
                         >
                           <span className="block font-bold">{opt.label_ar}</span>
                           <span
@@ -806,52 +1333,180 @@ function PatientTransferContent() {
           </div>
         </div>
 
-        {/* SECTION 4: Transfer Instructions */}
-        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-          <label className="block text-xs font-bold text-slate-800">
-            تعليمات النقل (Transfer Instructions):
-          </label>
+        {/* SECTION 4: Safety Checklist */}
+        <div className={`p-5 sm:p-6 rounded-2xl border-2 shadow-xs space-y-3 transition-all ${
+          isNurseChecklistDisabled
+            ? "bg-slate-50/90 border-slate-200 text-slate-800"
+            : "bg-white border-blue-300 shadow-md"
+        }`}>
+          <div className="flex items-center justify-between border-b border-blue-100 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🛡️</span>
+              <h3 className={`text-xs sm:text-sm font-bold ${isNurseChecklistDisabled ? "text-slate-700" : "text-blue-950"}`}>
+                متطلبات الأمان والتأكيد (Safety Checklist)
+              </h3>
+            </div>
+            <span className={`text-[10px] px-3 py-0.5 rounded-full font-bold border flex items-center gap-1 ${
+              isNurseChecklistDisabled
+                ? "bg-slate-200 text-slate-600 border-slate-300"
+                : "bg-blue-100 text-blue-800 border-blue-200"
+            }`}>
+              {isNurseChecklistDisabled && !canEditNurse && <Lock className="w-3 h-3" />}
+              <span>{isNurseChecklistDisabled && !canEditNurse ? "غير متاح لدورك (خاص بالتمريض)" : "مسؤولية التمريض 🛡️"}</span>
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            تأكيد التمريض لجميع تدابير السلامة وتأمين المحاليل والأجهزة وخصوصية المريض قبل وأثناء نقل المريض
+          </p>
+          {!canEditNurse && (
+            <p className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200">
+              ℹ️ قائمة متطلبات الأمان والتأكيد مخصصة لإدخال طاقم التمريض (للقراءة فقط لدورك الحالي).
+            </p>
+          )}
+          <div className="space-y-2 pt-1">
+            {SAFETY_ITEMS.map((item) => {
+              const val = safetyChecklist[item] || "";
+              return (
+                <div key={item} className="flex items-start gap-3 p-2.5 rounded-xl bg-blue-50/40 border border-blue-100">
+                  <span className="text-xs text-slate-700 flex-1 leading-relaxed pt-0.5">{item}</span>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isNurseChecklistDisabled}
+                      onClick={() =>
+                        setSafetyChecklist((prev) => ({ ...prev, [item]: val === "تم" ? "" : "تم" }))
+                      }
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                        val === "تم"
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                          : "bg-white text-slate-600 border-slate-300 hover:bg-emerald-50"
+                      } ${isNurseChecklistDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      تم
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isNurseChecklistDisabled}
+                      onClick={() =>
+                        setSafetyChecklist((prev) => ({ ...prev, [item]: val === "لا ينطبق" ? "" : "لا ينطبق" }))
+                      }
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${
+                        val === "لا ينطبق"
+                          ? "bg-slate-600 text-white border-slate-600 shadow-xs"
+                          : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100"
+                      } ${isNurseChecklistDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      لا ينطبق
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SECTION 5: Transfer Instructions */}
+        <div className={`p-5 sm:p-6 rounded-2xl border shadow-xs space-y-3 transition-all ${
+          isDoctorDisabled
+            ? "bg-slate-50/90 border-slate-200 text-slate-800"
+            : "bg-white border-slate-200/80"
+        }`}>
+          <div className="flex items-center justify-between">
+            <label className={`block text-xs font-bold ${isDoctorDisabled ? "text-slate-700" : "text-slate-800"}`}>
+              تعليمات النقل (Transfer Instructions):
+            </label>
+            <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1 ${
+              isDoctorDisabled ? "bg-slate-200 text-slate-600 border-slate-300" : "bg-purple-100 text-purple-800 border-purple-200"
+            }`}>
+              {isDoctorDisabled && <Lock className="w-3 h-3" />}
+              <span>{isDoctorDisabled ? "غير متاح لدورك (خاص بطبيب الأشعة)" : "خاص بطبيب الأشعة 🩺"}</span>
+            </span>
+          </div>
           <textarea
             rows={3}
-            disabled={isLocked}
+            disabled={isDoctorDisabled}
             value={transferInstructions}
             onChange={(e) => setTransferInstructions(e.target.value)}
             placeholder="أدخل أي تعليمات خاصة بنقل المريض، احتياطات التنفس، والأجهزة المرافقة..."
-            className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-xs outline-none"
+            className={`w-full px-3.5 py-2 border rounded-xl text-xs outline-none ${
+              isDoctorDisabled ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed" : "border-slate-300 bg-white"
+            }`}
           />
         </div>
 
         {/* SECTION 5: Signatures & Timestamp */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-emerald-600" />
+              <span>التوثيق والاعتماد الإلكتروني الرسمي</span>
+            </h3>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold">
+              توثيق آلي باسم المستخدم
+            </span>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                توقيع الممرض/ة المحول له المريض <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                disabled={isLocked}
-                value={receivingNurseSignature}
-                onChange={(e) => setReceivingNurseSignature(e.target.value)}
-                placeholder="اسم وتوقيع الممرض/ة..."
-                className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm ${
-                  fieldErrors.receivingNurseSignature ? "border-rose-400 bg-rose-50/40" : "border-slate-300"
-                }`}
-              />
+            {/* Receiving Physician Signature Card */}
+            <div className={`p-4 rounded-2xl border space-y-3 transition-all ${
+              !canEditRadiologist ? "bg-slate-50 border-slate-200" : "border-purple-200 bg-purple-50/40"
+            }`}>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-purple-950 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                  <span>توقيع واعتماد طبيب الأشعة</span>
+                </span>
+                <span className="text-[11px] bg-purple-100 text-purple-800 px-3 py-0.5 rounded-full font-bold">
+                  طبيب الأشعة
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-purple-200/80 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800 font-mono">
+                    {receivingPhysicianSignature || ((role === "radiologist" || isAdmin) ? profile?.full_name || "جاري التوثيق..." : "في انتظار توثيق طبيب الأشعة")}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {receivingPhysicianSignature || ((role === "radiologist" || isAdmin) && profile?.full_name) ? "تم التوثيق إلكترونياً بنجاح" : "لم يتم التوثيق بعد"}
+                  </div>
+                </div>
+                {(receivingPhysicianSignature || ((role === "radiologist" || isAdmin) && profile?.full_name)) && (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>معتمد</span>
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                توقيع الطبيب المستلم (Receiving Physician)
-              </label>
-              <input
-                type="text"
-                disabled={isLocked}
-                value={receivingPhysicianSignature}
-                onChange={(e) => setReceivingPhysicianSignature(e.target.value)}
-                placeholder="اسم وتوقيع الطبيب المستلم..."
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl outline-none text-xs sm:text-sm"
-              />
+            {/* Receiving Nurse Signature Card */}
+            <div className={`p-4 rounded-2xl border space-y-3 transition-all ${
+              isNurse ? "border-blue-300 bg-blue-50/70 shadow-xs" : !canEditNurse ? "bg-slate-50 border-slate-200" : "border-blue-200 bg-blue-50/40"
+            }`}>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-blue-950 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                  <span>توقيع واستلام التمريض</span>
+                </span>
+                <span className="text-[11px] bg-blue-100 text-blue-800 px-3 py-0.5 rounded-full font-bold">
+                  التمريض
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-xl border border-blue-200/80 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800 font-mono">
+                    {receivingNurseSignature || ((role === "nurse" || isAdmin) ? profile?.full_name || "جاري التوثيق..." : "في انتظار توثيق التمريض")}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {receivingNurseSignature || ((role === "nurse" || isAdmin) && profile?.full_name) ? "تم التوثيق إلكترونياً بنجاح" : "لم يتم التوثيق بعد"}
+                  </div>
+                </div>
+                {(receivingNurseSignature || ((role === "nurse" || isAdmin) && profile?.full_name)) && (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>معتمد</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -862,8 +1517,8 @@ function PatientTransferContent() {
             loading={loading}
             isLocked={isLocked}
             fieldErrors={fieldErrors}
-            defaultText="حفظ وتوثيق نموذج النقل"
-            editText="حفظ وتوثيق التعديلات"
+            defaultText={isNurse ? "حفظ وتوثيق استلام التمريض (قائمة الأمان)" : "حفظ وتوثيق تقييم ونقل المريض"}
+            editText={isNurse ? "حفظ وتوثيق استلام التمريض (قائمة الأمان)" : "حفظ وتوثيق التعديلات"}
             isEdit={!!editId}
             shakeTrigger={shakeTrigger}
           />
@@ -884,15 +1539,6 @@ function PatientTransferContent() {
               >
                 <Printer className="w-4 h-4 text-slate-600" />
                 <span>طباعة</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsLocked(false)}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs"
-              >
-                <Pencil className="w-4 h-4 text-amber-700" />
-                <span>تعديل</span>
               </button>
 
               <button
@@ -940,6 +1586,9 @@ function PatientTransferContent() {
             <div>From من: <span className="underline">{fromLocation || "................."}</span> إلى To: <span className="underline">{toLocation || "................."}</span></div>
           </div>
           <div>سبب النقل: <span className="underline">{transferReason || "...................................................................................................."}</span></div>
+          {requiredExams.length > 0 && (
+            <div className="pt-1">الفحوصات المطلوبة: <span className="font-bold">{requiredExams.join(" - ")}{otherExam ? ` - ${otherExam}` : ""}</span></div>
+          )}
         </div>
 
         {/* Interpretation Table */}
@@ -998,6 +1647,29 @@ function PatientTransferContent() {
           </div>
         </div>
 
+        {/* Safety Checklist print */}
+        {Object.keys(safetyChecklist).length > 0 && (
+          <div className="border border-black p-2 mb-3 text-[10px]">
+            <div className="font-bold underline mb-1.5">متطلبات الأمان والتأكيد (Safety Checklist):</div>
+            <table className="w-full border-collapse text-[10px]">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-black p-1 text-right">البند</th>
+                  <th className="border border-black p-1 w-16">الحالة</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SAFETY_ITEMS.map((item) => (
+                  <tr key={item}>
+                    <td className="border border-black p-1">{item}</td>
+                    <td className="border border-black p-1 text-center font-bold">{safetyChecklist[item] || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {transferInstructions && (
           <div className="border border-black p-2 mb-3 text-[10px]">
             <div className="font-bold underline mb-1">تعليمات النقل:</div>
@@ -1007,10 +1679,10 @@ function PatientTransferContent() {
 
         <div className="grid grid-cols-2 gap-4 pt-3 border-t-2 border-black text-[11px] font-bold">
           <div>
-            توقيع الممرض/ة المحول له: <span className="font-normal underline">{receivingNurseSignature || "...................."}</span>
+            توقيع واعتماد طبيب الأشعة: <span className="font-normal underline">{receivingPhysicianSignature || ((role === "radiologist" || isAdmin) ? profile?.full_name : "") || "...................."}</span>
           </div>
           <div>
-            توقيع الطبيب المستلم: <span className="font-normal underline">{receivingPhysicianSignature || "...................."}</span>
+            توقيع واستلام التمريض: <span className="font-normal underline">{receivingNurseSignature || ((role === "nurse" || isAdmin) ? profile?.full_name : "") || "...................."}</span>
           </div>
           <div>التاريخ: {transferDate}</div>
           <div>الوقت: {transferTime}</div>
@@ -1027,7 +1699,9 @@ function PatientTransferContent() {
 export default function PatientTransferPage() {
   return (
     <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">جاري التحميل...</div>}>
-      <PatientTransferContent />
+      <FormRoleGuard allowedRoles={["radiologist", "nurse"]} formTitle="نموذج نقل المريض (RSTP) — TRC.ACT">
+        <PatientTransferContent />
+      </FormRoleGuard>
     </Suspense>
   );
 }

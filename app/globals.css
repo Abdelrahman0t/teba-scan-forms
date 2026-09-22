@@ -21,17 +21,19 @@
   }
 }
 
-/* Custom Medical Print Styles matching TRC.MRS Official Layout */
+/* Custom Medical Print Styles matching Official Hospital Layouts */
 @media print {
   @page {
     size: A4 portrait;
-    margin: 12mm 14mm;
+    margin: 8mm 10mm;
   }
 
   body {
     background: white !important;
     color: black !important;
-    font-size: 11pt;
+    font-size: 10pt;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .no-print {
@@ -42,13 +44,18 @@
     display: block !important;
   }
 
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
   table {
     border-collapse: collapse !important;
     width: 100% !important;
   }
 
   th, td {
-    border: 1px solid #000 !important;
+    border: 1px solid #111 !important;
   }
 }
 
@@ -67,5 +74,14 @@
 
 .animate-button-vibrate {
   animation: button-vibrate 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+}
+
+/* Clean scrollbar suppression across browsers */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
