@@ -690,6 +690,16 @@ function PatientAssessmentContent() {
       if (!procedureName.trim()) errors.procedureName = "اسم الإجراء مطلوب";
     }
 
+    // نتائج المعمل إلزامية لطبيب الأشعة (Radiologist)
+    if (role === "radiologist") {
+      if (labCreatinine === "" || isNaN(Number(labCreatinine))) errors.labCreatinine = "مطلوب";
+      if (labGfr === "" || isNaN(Number(labGfr))) errors.labGfr = "مطلوب";
+      if (labUrea === "" || isNaN(Number(labUrea))) errors.labUrea = "مطلوب";
+      if (labBun === "" || isNaN(Number(labBun))) errors.labBun = "مطلوب";
+      if (labSodium === "" || isNaN(Number(labSodium))) errors.labSodium = "مطلوب";
+      if (labPotassium === "" || isNaN(Number(labPotassium))) errors.labPotassium = "مطلوب";
+    }
+
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   }
@@ -699,7 +709,11 @@ function PatientAssessmentContent() {
     setErrorMsg("");
 
     if (!validateForm()) {
-      setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
+      if (role === "radiologist") {
+        setErrorMsg("يرجى إدخال جميع نتائج المعمل (Creatinine, GFR, Urea, BUN, Sodium, Potassium) الإجبارية لطبيب الأشعة.");
+      } else {
+        setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
+      }
       setShakeTrigger((prev) => prev + 1);
       return;
     }
@@ -2378,101 +2392,190 @@ function PatientAssessmentContent() {
                 : "bg-emerald-50 text-emerald-800 border-emerald-200"
             }`}>
               {isRadiologistDisabled && <Lock className="w-3 h-3" />}
-              <span>{isRadiologistDisabled ? "غير متاح لدورك (خاص بأخصائي الأشعة)" : "خاص بأخصائي الأشعة (Radiologist)"}</span>
+              <span>{isRadiologistDisabled ? "غير متاح لدورك (خاص بأخصائي الأشعة)" : "خاص بأخصائي الأشعة (Radiologist) — إجباري *"}</span>
             </span>
           </div>
 
-          {!canEditRadiologist && (
+          {!canEditRadiologist ? (
             <p className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200">
               ℹ️ نتائج التحاليل المعملية مخصصة لإدخال أخصائي الأشعة أو المسؤول (للقراءة فقط لدورك الحالي).
+            </p>
+          ) : (
+            <p className="text-[11px] text-emerald-800 bg-emerald-50/90 p-2.5 rounded-lg border border-emerald-200 font-medium flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span><strong>تنبيه لطبيب الأشعة:</strong> جميع حقول نتائج المعمل الستة أدناه إلزامية لتأكيد واعتماد التقييم بنجاح.</span>
             </p>
           )}
 
           <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs">
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">Creatinine</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Creatinine {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 disabled={isRadiologistDisabled}
                 value={labCreatinine}
-                onChange={(e) => setLabCreatinine(e.target.value ? Number(e.target.value) : "")}
+                onChange={(e) => {
+                  setLabCreatinine(e.target.value ? Number(e.target.value) : "");
+                  if (fieldErrors.labCreatinine) {
+                    setFieldErrors((prev) => ({ ...prev, labCreatinine: "" }));
+                  }
+                }}
                 placeholder="0.9"
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-center ${
-                  isRadiologistDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                  isRadiologistDisabled
+                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                    : fieldErrors.labCreatinine
+                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
+                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
                 }`}
               />
+              {fieldErrors.labCreatinine && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labCreatinine}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">GFR</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                GFR {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
+              </label>
               <input
                 type="number"
                 disabled={isRadiologistDisabled}
                 value={labGfr}
-                onChange={(e) => setLabGfr(e.target.value ? Number(e.target.value) : "")}
+                onChange={(e) => {
+                  setLabGfr(e.target.value ? Number(e.target.value) : "");
+                  if (fieldErrors.labGfr) {
+                    setFieldErrors((prev) => ({ ...prev, labGfr: "" }));
+                  }
+                }}
                 placeholder="90"
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-center ${
-                  isRadiologistDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                  isRadiologistDisabled
+                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                    : fieldErrors.labGfr
+                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
+                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
                 }`}
               />
+              {fieldErrors.labGfr && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labGfr}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">Urea</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Urea {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
+              </label>
               <input
                 type="number"
                 disabled={isRadiologistDisabled}
                 value={labUrea}
-                onChange={(e) => setLabUrea(e.target.value ? Number(e.target.value) : "")}
+                onChange={(e) => {
+                  setLabUrea(e.target.value ? Number(e.target.value) : "");
+                  if (fieldErrors.labUrea) {
+                    setFieldErrors((prev) => ({ ...prev, labUrea: "" }));
+                  }
+                }}
                 placeholder="30"
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-center ${
-                  isRadiologistDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                  isRadiologistDisabled
+                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                    : fieldErrors.labUrea
+                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
+                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
                 }`}
               />
+              {fieldErrors.labUrea && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labUrea}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">BUN</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                BUN {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
+              </label>
               <input
                 type="number"
                 disabled={isRadiologistDisabled}
                 value={labBun}
-                onChange={(e) => setLabBun(e.target.value ? Number(e.target.value) : "")}
+                onChange={(e) => {
+                  setLabBun(e.target.value ? Number(e.target.value) : "");
+                  if (fieldErrors.labBun) {
+                    setFieldErrors((prev) => ({ ...prev, labBun: "" }));
+                  }
+                }}
                 placeholder="15"
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-center ${
-                  isRadiologistDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                  isRadiologistDisabled
+                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                    : fieldErrors.labBun
+                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
+                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
                 }`}
               />
+              {fieldErrors.labBun && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labBun}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">Sodium (Na+)</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Sodium (Na+) {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
+              </label>
               <input
                 type="number"
                 disabled={isRadiologistDisabled}
                 value={labSodium}
-                onChange={(e) => setLabSodium(e.target.value ? Number(e.target.value) : "")}
+                onChange={(e) => {
+                  setLabSodium(e.target.value ? Number(e.target.value) : "");
+                  if (fieldErrors.labSodium) {
+                    setFieldErrors((prev) => ({ ...prev, labSodium: "" }));
+                  }
+                }}
                 placeholder="140"
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-center ${
-                  isRadiologistDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                  isRadiologistDisabled
+                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                    : fieldErrors.labSodium
+                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
+                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
                 }`}
               />
+              {fieldErrors.labSodium && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labSodium}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">Potassium (K+)</label>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Potassium (K+) {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
+              </label>
               <input
                 type="number"
                 step="0.1"
                 disabled={isRadiologistDisabled}
                 value={labPotassium}
-                onChange={(e) => setLabPotassium(e.target.value ? Number(e.target.value) : "")}
+                onChange={(e) => {
+                  setLabPotassium(e.target.value ? Number(e.target.value) : "");
+                  if (fieldErrors.labPotassium) {
+                    setFieldErrors((prev) => ({ ...prev, labPotassium: "" }));
+                  }
+                }}
                 placeholder="4.0"
-                className={`w-full px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono text-center ${
-                  isRadiologistDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
+                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                  isRadiologistDisabled
+                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                    : fieldErrors.labPotassium
+                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
+                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
                 }`}
               />
+              {fieldErrors.labPotassium && (
+                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labPotassium}</p>
+              )}
             </div>
           </div>
         </div>
