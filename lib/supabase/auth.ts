@@ -227,8 +227,9 @@ export function useUser(): AuthState {
     window.addEventListener("focus", syncSession);
     window.addEventListener("storage", handleStorage);
 
-    // Fast interval check (every 3 seconds) to immediately evict staff if admin rejected/deleted them
-    const interval = setInterval(syncSession, 3000);
+    // Background session refresh every 5 minutes (safety net for long-running sessions).
+    // The window "focus" listener above handles immediate re-checks when the user switches back to the tab.
+    const interval = setInterval(syncSession, 300000);
 
     return () => {
       mounted = false;

@@ -91,26 +91,33 @@ export default function PatientsPage() {
       builder = builder.or(filter);
     }
 
-    const [patientsRes, subsRes] = await Promise.all([
-      builder,
-      supabase
-        .from("form_submissions")
-        .select("id, patient_id, form_code, created_at")
-        .order("created_at", { ascending: false }),
-    ]);
+    // Step 1: Fetch only the patients matching the search query.
+    const patientsRes = await builder;
+    const patientList = patientsRes.data || [];
 
+    // Step 2: Fetch submissions only for the patients we are displaying.
+    // Using .in("patient_id", ids) hits the indexed column and avoids a full table scan.
     const subsByPatient = new Map<string, { count: number; latest: string }>();
-    (subsRes.data || []).forEach((s: any) => {
-      if (!s.patient_id) return;
-      const existing = subsByPatient.get(s.patient_id);
-      if (!existing) {
-        subsByPatient.set(s.patient_id, { count: 1, latest: s.created_at });
-      } else {
-        existing.count += 1;
-      }
-    });
+    if (patientList.length > 0) {
+      const patientIds = patientList.map((p: any) => p.id);
+      const subsRes = await supabase
+        .from("form_submissions")
+        .select("patient_id, created_at")
+        .in("patient_id", patientIds)
+        .order("created_at", { ascending: false });
 
-    const enriched = (patientsRes.data || []).map((p: any) => {
+      (subsRes.data || []).forEach((s: any) => {
+        if (!s.patient_id) return;
+        const existing = subsByPatient.get(s.patient_id);
+        if (!existing) {
+          subsByPatient.set(s.patient_id, { count: 1, latest: s.created_at });
+        } else {
+          existing.count += 1;
+        }
+      });
+    }
+
+    const enriched = patientList.map((p: any) => {
       const subInfo = subsByPatient.get(p.id);
       return {
         ...p,

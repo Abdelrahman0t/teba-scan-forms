@@ -75,14 +75,14 @@ export default function Home() {
         transRes,
         patientsRes,
       ] = await Promise.all([
-        supabase.from("radiation_exposure_logs").select("*").order("created_at", { ascending: false }).limit(10),
-        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").order("created_at", { ascending: false }).limit(10),
-        supabase.from("fall_risk_screenings").select("*").order("created_at", { ascending: false }).limit(10),
-        supabase.from("fall_risk_adult_assessments").select("*").order("created_at", { ascending: false }).limit(10),
-        supabase.from("fall_risk_pediatric_assessments").select("*").order("created_at", { ascending: false }).limit(10),
-        supabase.from("patient_assessments").select("*").order("created_at", { ascending: false }).limit(10),
-        supabase.from("patient_transfers").select("*").order("created_at", { ascending: false }).limit(10),
-        supabase.from("patients").select("id, full_name, mrn, age, gender"),
+        supabase.from("radiation_exposure_logs").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").order("created_at", { ascending: false }).limit(50),
+        supabase.from("fall_risk_screenings").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("fall_risk_adult_assessments").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("fall_risk_pediatric_assessments").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("patient_assessments").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("patient_transfers").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("patients").select("id, full_name, mrn, age, gender").limit(200),
       ]);
 
       const patientMap = new Map((patientsRes.data || []).map((p: any) => [p.id, p]));

@@ -34,6 +34,7 @@ export default function SubmissionsPage() {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("month");
 
   // Protect page: admission role has no access to clinical records
   useEffect(() => {
@@ -55,15 +56,40 @@ export default function SubmissionsPage() {
 
   useEffect(() => {
     fetchSubmissions(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange]);
 
   // Real-time live synchronization (No Refresh Needed)
   useFormSync(() => {
     fetchSubmissions(true);
   });
 
+  /** Returns the ISO start timestamp for the current date range, or null for "all time". */
+  function getStartDate(range: "today" | "week" | "month" | "all"): string | null {
+    if (range === "all") return null;
+    const now = new Date();
+    if (range === "today") {
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    }
+    const d = new Date(now);
+    d.setDate(d.getDate() - (range === "week" ? 7 : 30));
+    return d.toISOString();
+  }
+
   async function fetchSubmissions(silent = false) {
     if (!silent) setLoading(true);
+    const startDate = getStartDate(dateRange);
+
+    /** Builds a query with a server-side date filter + row limit applied. */
+    function buildQuery(table: string, selectStr: string) {
+      let q = supabase
+        .from(table)
+        .select(selectStr)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (startDate) q = q.gte("created_at", startDate);
+      return q;
+    }
 
     try {
       const [
@@ -76,35 +102,15 @@ export default function SubmissionsPage() {
         transRes,
         patientsRes,
       ] = await Promise.all([
-        supabase
-          .from("radiation_exposure_logs")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("health_education_assessments")
-          .select("*, health_education_topic_entries(*)")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("fall_risk_screenings")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("fall_risk_adult_assessments")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("fall_risk_pediatric_assessments")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("patient_assessments")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("patient_transfers")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase.from("patients").select("*"),
+        buildQuery("radiation_exposure_logs", "*"),
+        buildQuery("health_education_assessments", "*, health_education_topic_entries(*)"),
+        buildQuery("fall_risk_screenings", "*"),
+        buildQuery("fall_risk_adult_assessments", "*"),
+        buildQuery("fall_risk_pediatric_assessments", "*"),
+        buildQuery("patient_assessments", "*"),
+        buildQuery("patient_transfers", "*"),
+        // Patients table is tiny — just IDs/names for lookup. No date filter needed.
+        supabase.from("patients").select("id, full_name, mrn, age, gender"),
       ]);
 
       const patientMap = new Map((patientsRes.data || []).map((p: any) => [p.id, p]));
@@ -298,6 +304,32 @@ export default function SubmissionsPage() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Date Range Filter */}
+      <div className="bg-white px-5 py-3.5 rounded-2xl shadow-xs border border-slate-200/80 flex flex-wrap items-center gap-2.5 no-print">
+        <span className="text-xs font-bold text-slate-500">الفترة الزمنية:</span>
+        {([
+          { id: "today", label: "اليوم فقط" },
+          { id: "week",  label: "آخر 7 أيام" },
+          { id: "month", label: "آخر 30 يوم" },
+          { id: "all",   label: "كل السجلات" },
+        ] as const).map((r) => (
+          <button
+            key={r.id}
+            onClick={() => setDateRange(r.id)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              dateRange === r.id
+                ? "bg-[#621c6f] text-white shadow-sm"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+        <span className="text-[11px] text-slate-400 mr-auto">
+          • عرض آخر 100 سجل لكل نوع نموذج {dateRange === "all" ? "من كل الوقت" : "ضمن الفترة المحددة"}
+        </span>
       </div>
 
       {/* Tabs & Search Bar */}
