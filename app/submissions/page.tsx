@@ -81,9 +81,9 @@ export default function SubmissionsPage() {
     const startDate = getStartDate(dateRange);
 
     /** Builds a query with a server-side date filter + row limit applied. */
-    function buildQuery(table: string, selectStr: string) {
-      let q = supabase
-        .from(table)
+    function buildQuery(table: string, selectStr: string): Promise<{ data: any[] | null; error: any }> {
+      let q: any = supabase
+        .from(table as any)
         .select(selectStr)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -132,10 +132,10 @@ export default function SubmissionsPage() {
         };
       }
 
-      setRadLogs((radsRes.data || []).map((r) => resolvePatient(r, "radiation", "تسجيل جرعات الأشعة", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-purple-600 bg-purple-50")));
-      setEduLogs((edusRes.data || []).map((e) => resolvePatient(e, "education", "التثقيف الصحي للأسرة", "TRC.MRS", "/forms/patient-education", HeartPulse, "text-rose-600 bg-rose-50")));
-      setFallScreenLogs((fallScreenRes.data || []).map((fs) => resolvePatient(fs, "fall_screen", "المسح المبدئي لخطر السقوط", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")));
-      setFallAdultLogs((fallAdultRes.data || []).map((fa) => {
+      setRadLogs((radsRes.data || []).map((r: any) => resolvePatient(r, "radiation", "تسجيل جرعات الأشعة", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-purple-600 bg-purple-50")));
+      setEduLogs((edusRes.data || []).map((e: any) => resolvePatient(e, "education", "التثقيف الصحي للأسرة", "TRC.MRS", "/forms/patient-education", HeartPulse, "text-rose-600 bg-rose-50")));
+      setFallScreenLogs((fallScreenRes.data || []).map((fs: any) => resolvePatient(fs, "fall_screen", "المسح المبدئي لخطر السقوط", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")));
+      setFallAdultLogs((fallAdultRes.data || []).map((fa: any) => {
         const isHighRisk = Boolean(
           fa.is_high_risk ||
           fa.bed_ridden ||
@@ -159,7 +159,7 @@ export default function SubmissionsPage() {
           "text-orange-600 bg-orange-50"
         );
       }));
-      setFallPedLogs((fallPedRes.data || []).map((fp) => {
+      setFallPedLogs((fallPedRes.data || []).map((fp: any) => {
         const isHighRisk = Boolean(
           fp.is_high_risk ||
           fp.bed_ridden ||
@@ -181,7 +181,7 @@ export default function SubmissionsPage() {
           "text-cyan-600 bg-cyan-50"
         );
       }));
-      setAssessmentLogs((assessRes.data || []).map((a) => {
+      setAssessmentLogs((assessRes.data || []).map((a: any) => {
         const plans = Array.isArray(a.plan_of_care) ? a.plan_of_care : [];
         const techPlan = plans.find((p: any) =>
           !p?.responsible?.some((r: string) => r?.includes("طبيب") || r?.includes("أخصائي")) &&
@@ -201,7 +201,7 @@ export default function SubmissionsPage() {
         const resolvedTechSig = techPlan?.confirmed_by || (a.tech_signature && a.tech_signature !== resolvedDocSig ? a.tech_signature : null) || null;
         return resolvePatient({ ...a, physician_signature: resolvedDocSig, tech_signature: resolvedTechSig }, "assessment", "نموذج تقييم المريض الشامل", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-teal-600 bg-teal-50");
       }));
-      setTransferLogs((transRes.data || []).map((t) => resolvePatient(t, "transfer", "نموذج نقل المريض (RSTP)", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-sky-600 bg-sky-50")));
+      setTransferLogs((transRes.data || []).map((t: any) => resolvePatient(t, "transfer", "نموذج نقل المريض (RSTP)", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-sky-600 bg-sky-50")));
     } catch (err) {
       console.error("Error fetching submissions:", err);
     } finally {
