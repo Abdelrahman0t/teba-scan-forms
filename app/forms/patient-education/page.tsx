@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
+  Calendar,
+  Clock,
   HeartPulse,
   Printer,
   CheckCircle2,
@@ -19,6 +21,7 @@ import {
   Loader2,
   AlertCircle,
   Info as InfoIcon,
+  ChevronDown,
 } from "lucide-react";
 import FormSubmitButton from "@/components/FormSubmitButton";
 import FormRoleGuard from "@/components/FormRoleGuard";
@@ -26,6 +29,7 @@ import { findPatientByMrn } from "@/lib/numberUtils";
 import { useUser } from "@/lib/supabase/auth";
 import { notifyFormSubmission } from "@/lib/syncEvents";
 import { getFormStatusInfo } from "@/lib/formStatus";
+import { getCurrentTimeShort, getCurrentDate, formatTime12 } from "@/lib/timeUtils";
 
 function playSuccessSound() {
   try {
@@ -93,7 +97,11 @@ function PatientEducationContent() {
     setSearchStatus(null);
     clearPatientFields();
     setProcedureName("");
+    setSelectedProcedures([]);
+    setProcedureCustom("");
     setProcedureLocation("");
+    setSelectedLocations([]);
+    setLocationCustom("");
     setEducationLevel(null);
     setLearningReceptivity(null);
     setBarriers([]);
@@ -109,9 +117,114 @@ function PatientEducationContent() {
   // Patient Header - ALL REQUIRED
   const [mrn, setMrn] = useState("");
   const [patientName, setPatientName] = useState("");
+  const [educationDate, setEducationDate] = useState(() => getCurrentDate());
+  const [educationTime, setEducationTime] = useState(() => getCurrentTimeShort());
   const [procedureName, setProcedureName] = useState("");
+  const [selectedProcedures, setSelectedProcedures] = useState<string[]>([]);
+  const [procedureCustom, setProcedureCustom] = useState("");
   const [procedureLocation, setProcedureLocation] = useState("");
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [locationCustom, setLocationCustom] = useState("");
   const [patientId, setPatientId] = useState<string | null>(null);
+
+  const PROCEDURE_LOCATIONS = [
+    "المخ",
+    "الفقرات العنقيه",
+    "الفقرات القطنيه",
+    "الصدر",
+    "البطن",
+    "البطن والحوض",
+    "الركبه",
+    "الكتف",
+    "اوردة وشرايين الطرفين",
+    "الغده",
+    "الرقبه",
+    "علي المسالك البوليه",
+    "اورده وشرايين الطرف السفلي",
+    "اخرى",
+  ];
+
+  function computeProcedureLocation(selected: string[], custom: string) {
+    const parts: string[] = [];
+    selected.forEach((loc) => {
+      if (loc !== "اخرى") {
+        parts.push(loc);
+      }
+    });
+    if (selected.includes("اخرى")) {
+      if (custom.trim()) {
+        parts.push(custom.trim());
+      } else {
+        parts.push("اخرى");
+      }
+    }
+    return parts.join("، ");
+  }
+
+  function parseProcedureLocation(rawLoc: string) {
+    if (!rawLoc) return { selected: [] as string[], custom: "" };
+    const tokens = rawLoc.split(/[,،+]/).map((t) => t.trim()).filter(Boolean);
+    const selected: string[] = [];
+    const customParts: string[] = [];
+
+    tokens.forEach((tok) => {
+      const match = PROCEDURE_LOCATIONS.find(
+        (opt) => opt !== "اخرى" && (opt.toLowerCase() === tok.toLowerCase() || opt === tok)
+      );
+      if (match) {
+        if (!selected.includes(match)) selected.push(match);
+      } else {
+        customParts.push(tok);
+      }
+    });
+
+    if (customParts.length > 0) {
+      if (!selected.includes("اخرى")) selected.push("اخرى");
+    }
+
+    return { selected, custom: customParts.join("، ") };
+  }
+
+  function computeProcedureName(selected: string[], custom: string) {
+    const parts: string[] = [];
+    selected.forEach((p) => {
+      if (p !== "أخرى") {
+        parts.push(p);
+      }
+    });
+    if (selected.includes("أخرى")) {
+      if (custom.trim()) {
+        parts.push(custom.trim());
+      } else {
+        parts.push("أخرى");
+      }
+    }
+    return parts.join("، ");
+  }
+
+  function parseProcedureName(rawProc: string) {
+    if (!rawProc) return { selected: [] as string[], custom: "" };
+    const tokens = rawProc.split(/[,،+]/).map((t) => t.trim()).filter(Boolean);
+    const selected: string[] = [];
+    const customParts: string[] = [];
+
+    tokens.forEach((tok) => {
+      const match = ["X-Ray", "MRI", "CT", "Doppler", "Echo", "U/S"].find(
+        (opt) => opt.toLowerCase() === tok.toLowerCase()
+      );
+      if (match) {
+        if (!selected.includes(match)) selected.push(match);
+      } else {
+        customParts.push(tok);
+      }
+    });
+
+    if (customParts.length > 0) {
+      if (!selected.includes("أخرى")) selected.push("أخرى");
+    }
+
+    return { selected, custom: customParts.join("، ") };
+  }
 
   // Initial Assessment - ALL REQUIRED
   const [educationLevel, setEducationLevel] = useState<string | null>(null);
@@ -156,21 +269,12 @@ function PatientEducationContent() {
       reeducation_required: false,
       is_custom: false,
     })),
-    {
-      id: `custom_${Date.now()}`,
-      topic_name: "تثقيف آخر:",
-      custom_text: "",
-      educator_name: "",
-      is_comprehended: null as boolean | null,
-      reeducation_required: false,
-      is_custom: true,
-    },
   ]);
 
   const { profile, role, isAdmin, loading: authLoading } = useUser();
   const canEditNurse = isAdmin || role === "nurse";
   const canEditTech = isAdmin || role === "technician";
-  const isNurseDisabled = isLocked || !canEditNurse;
+  const isNurseDisabled = !canEditNurse;
 
   // Auto-fill educator name according to user role
   useEffect(() => {
@@ -212,7 +316,7 @@ function PatientEducationContent() {
     try {
       const { data, error } = await supabase
         .from("health_education_assessments")
-        .select("*, patients(id, full_name, mrn), health_education_topic_entries(*)")
+        .select("*, patients(id, full_name, mrn), health_education_topic_entries(*), form_submissions(data)")
         .eq("id", id)
         .single();
 
@@ -222,8 +326,21 @@ function PatientEducationContent() {
         setPatientId(data.patient_id);
         setPatientName(data.patients?.full_name || "");
         setMrn(data.patients?.mrn || "");
-        setProcedureName(data.procedure_name || "");
-        setProcedureLocation(data.procedure_location || "");
+        const subData = (data as any).form_submissions?.data || {};
+        const createdDate = data.created_at ? data.created_at.split("T")[0] : getCurrentDate();
+        const createdTime = data.created_at && data.created_at.includes("T") ? data.created_at.split("T")[1].slice(0, 5) : getCurrentTimeShort();
+        setEducationDate((data as any).education_date || subData.education_date || createdDate);
+        setEducationTime((data as any).education_time || subData.education_time || createdTime);
+        const loadedProc = data.procedure_name || "";
+        setProcedureName(loadedProc);
+        const parsed = parseProcedureName(loadedProc);
+        setSelectedProcedures(parsed.selected);
+        setProcedureCustom(parsed.custom);
+        const loadedLoc = data.procedure_location || "";
+        setProcedureLocation(loadedLoc);
+        const parsedLoc = parseProcedureLocation(loadedLoc);
+        setSelectedLocations(parsedLoc.selected);
+        setLocationCustom(parsedLoc.custom);
         setEducationLevel(data.education_level || null);
         setLearningReceptivity(data.learning_receptivity || null);
         
@@ -322,21 +439,9 @@ function PatientEducationContent() {
             };
           });
 
-          if (customMapped.length === 0) {
-            customMapped.push({
-              id: `custom_${Date.now()}`,
-              topic_name: "تثقيف آخر:",
-              custom_text: "",
-              educator_name: "",
-              is_comprehended: null,
-              reeducation_required: false,
-              is_custom: true,
-            });
-          }
-
           setTopics([...coreMapped, ...customMapped]);
         }
-        setIsLocked(true);
+        setIsLocked(!canEditNurse);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -369,8 +474,14 @@ function PatientEducationContent() {
   function clearPatientFields() {
     setPatientId(null);
     setPatientName("");
+    setEducationDate(getCurrentDate());
+    setEducationTime(getCurrentTimeShort());
     setProcedureName("");
+    setSelectedProcedures([]);
+    setProcedureCustom("");
     setProcedureLocation("");
+    setSelectedLocations([]);
+    setLocationCustom("");
   }
 
   async function searchPatientByMrn(searchMrn: string) {
@@ -464,6 +575,7 @@ function PatientEducationContent() {
     }
 
     // NURSE / ADMIN:
+    // The nurse has the right to start a fresh new form for the patient. Do NOT auto-load old forms.
     try {
       const data = await findPatientByMrn(supabase, cleanMrn);
       if (latestSearchMrnRef.current !== thisSearch) return;
@@ -474,26 +586,10 @@ function PatientEducationContent() {
       }
 
       setPatientId(data.id);
-      setPatientName((prev) => prev || data.full_name || "");
-
-      // Check if patient already has an INCOMPLETE education record to resume
-      const { data: educations } = await supabase
-        .from("health_education_assessments")
-        .select("*, health_education_topic_entries(*)")
-        .eq("patient_id", data.id)
-        .order("created_at", { ascending: false });
-
-      if (educations && educations.length > 0) {
-        const incompleteList = educations.filter((e) => {
-          const s = getFormStatusInfo({ ...e, formType: "education" });
-          return !s.isComplete;
-        });
-
-        // Only load if there is an incomplete education form; never auto-load a completed one!
-        if (incompleteList.length > 0) {
-          loadRecordForEdit(incompleteList[0].id);
-        }
-      }
+      setMrn(data.mrn || cleanMrn);
+      setPatientName(data.full_name || "");
+      setEducationDate(getCurrentDate());
+      setEducationTime(getCurrentTimeShort());
     } catch (err) {}
   }
 
@@ -510,6 +606,8 @@ function PatientEducationContent() {
     if (canEditNurse || !editAssessmentId) {
       if (!patientName.trim()) errors.patientName = "اسم المريض رباعي مطلوب";
       if (!mrn.trim()) errors.mrn = "رقم الملف الطبي مطلوب";
+      if (!educationDate) errors.educationDate = "تاريخ التثقيف مطلوب";
+      if (!educationTime) errors.educationTime = "وقت التثقيف مطلوب";
       if (!procedureName.trim()) errors.procedureName = "الإجراء مطلوب";
       if (!procedureLocation.trim()) errors.procedureLocation = "مكان الإجراء مطلوب";
       if (!educationLevel) errors.educationLevel = "يرجى تحديد المستوى التعليمي للمريض";
@@ -666,6 +764,37 @@ function PatientEducationContent() {
             .eq("id", editAssessmentId);
 
           if (aUpdateErr) throw new Error(`خطأ تحديث التقييم: ${aUpdateErr.message}`);
+
+          // Also sync with form_submissions if linked
+          const { data: existingAssess } = await supabase
+            .from("health_education_assessments")
+            .select("submission_id")
+            .eq("id", editAssessmentId)
+            .single();
+
+          if (existingAssess?.submission_id) {
+            await supabase
+              .from("form_submissions")
+              .update({
+                data: {
+                  mrn,
+                  patient_name: patientName,
+                  education_date: educationDate,
+                  education_time: educationTime,
+                  educator_name: profile?.full_name || "مسؤول التثقيف",
+                  procedure_name: procedureName,
+                  procedure_location: procedureLocation,
+                  education_level: educationLevel,
+                  learning_receptivity: learningReceptivity,
+                  barriers,
+                  target_recipient: targetRecipient,
+                  education_method: finalMethodString ? [finalMethodString] : [],
+                  other_method_text: otherMethodText.trim() || null,
+                  topics: processedTopics,
+                },
+              })
+              .eq("id", existingAssess.submission_id);
+          }
         }
 
         // Delete old topics and insert fresh topic entries
@@ -712,6 +841,9 @@ function PatientEducationContent() {
         const submissionPayload = {
           mrn,
           patient_name: patientName,
+          education_date: educationDate,
+          education_time: educationTime,
+          educator_name: profile?.full_name || "مسؤول التثقيف",
           procedure_name: procedureName,
           procedure_location: procedureLocation,
           education_level: educationLevel,
@@ -915,7 +1047,13 @@ function PatientEducationContent() {
                       <input
                         type="text"
                         value={searchMrnInput}
-                        onChange={(e) => setSearchMrnInput(e.target.value)}
+                        onChange={(e) => {
+                          setSearchMrnInput(e.target.value);
+                          if (!e.target.value.trim()) {
+                            clearPatientFields();
+                            setSearchStatus(null);
+                          }
+                        }}
                         placeholder="رقم الملف الطبي..."
                         className="px-3.5 py-2 border border-sky-300 focus:border-sky-500 rounded-xl text-xs bg-white text-slate-900 outline-none w-full sm:w-48 font-mono shadow-2xs font-bold placeholder:text-slate-400"
                         onKeyDown={(e) => {
@@ -1003,6 +1141,7 @@ function PatientEducationContent() {
               </div>
             )}
 
+            {/* Top Row: Basic Info (MRN & Patient Name) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -1016,10 +1155,18 @@ function PatientEducationContent() {
                     value={mrn}
                     onChange={(e) => {
                       setMrn(e.target.value);
-                      searchPatientByMrn(e.target.value);
+                      if (!e.target.value.trim()) {
+                        clearPatientFields();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        searchPatientByMrn(mrn);
+                      }
                     }}
                     placeholder="رقم الملف الطبي..."
-                    className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
+                    className={`w-full pl-24 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
                       isNurseDisabled
                         ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                         : fieldErrors.mrn
@@ -1027,7 +1174,15 @@ function PatientEducationContent() {
                         : "border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                     }`}
                   />
-                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <button
+                    type="button"
+                    disabled={isNurseDisabled}
+                    onClick={() => searchPatientByMrn(mrn)}
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#481454] hover:bg-[#380e42] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>بحث</span>
+                  </button>
                 </div>
                 {fieldErrors.mrn && (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.mrn}</p>
@@ -1042,7 +1197,16 @@ function PatientEducationContent() {
                   type="text"
                   disabled={isNurseDisabled}
                   value={patientName}
-                  onChange={(e) => setPatientName(e.target.value)}
+                  onChange={(e) => {
+                    setPatientName(e.target.value);
+                    if (fieldErrors.patientName) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.patientName;
+                        return next;
+                      });
+                    }
+                  }}
                   placeholder="اسم المريض رباعي..."
                   className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
                     isNurseDisabled
@@ -1056,52 +1220,230 @@ function PatientEducationContent() {
                   <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.patientName}</p>
                 )}
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  الإجراء <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  disabled={isNurseDisabled}
-                  value={procedureName}
-                  onChange={(e) => setProcedureName(e.target.value)}
-                  placeholder="الإجراء..."
-                  className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                    isNurseDisabled
-                      ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
-                      : fieldErrors.procedureName
-                      ? "border-rose-400 bg-rose-50/40"
-                      : "border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  }`}
-                />
-                {fieldErrors.procedureName && (
-                  <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureName}</p>
+            {/* Dedicated Full-Width Row: الإجراء المطلوب */}
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-slate-800">
+                    الإجراء المطلوب <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-normal">
+                    (يمكنك اختيار إجراء واحد أو أكثر)
+                  </span>
+                </div>
+                {selectedProcedures.length > 0 && (
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/90 px-3 py-1 rounded-xl shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>تم تحديد ({selectedProcedures.length}):</span>
+                    <strong className="text-emerald-950 font-black">{procedureName || selectedProcedures.join("، ")}</strong>
+                  </div>
                 )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  مكان الإجراء <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  disabled={isNurseDisabled}
-                  value={procedureLocation}
-                  onChange={(e) => setProcedureLocation(e.target.value)}
-                  placeholder="مكان الإجراء..."
-                  className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                    isNurseDisabled
-                      ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
-                      : fieldErrors.procedureLocation
-                      ? "border-rose-400 bg-rose-50/40"
-                      : "border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  }`}
-                />
-                {fieldErrors.procedureLocation && (
-                  <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureLocation}</p>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-2.5">
+                  {[
+                    { id: "X-Ray", label: "X-Ray" },
+                    { id: "MRI", label: "MRI" },
+                    { id: "CT", label: "CT" },
+                    { id: "Doppler", label: "Doppler" },
+                    { id: "Echo", label: "Echo" },
+                    { id: "U/S", label: "U/S" },
+                    { id: "أخرى", label: "أخرى" },
+                  ].map((item) => {
+                    const isSelected = selectedProcedures.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={isNurseDisabled}
+                        onClick={() => {
+                          let next: string[];
+                          if (isSelected) {
+                            next = selectedProcedures.filter((p) => p !== item.id);
+                          } else {
+                            next = [...selectedProcedures, item.id];
+                          }
+                          setSelectedProcedures(next);
+                          setProcedureName(computeProcedureName(next, procedureCustom));
+                          if (fieldErrors.procedureName) {
+                            setFieldErrors((prev) => {
+                              const nextErr = { ...prev };
+                              delete nextErr.procedureName;
+                              return nextErr;
+                            });
+                          }
+                        }}
+                        className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 border select-none cursor-pointer ${
+                          isNurseDisabled
+                            ? isSelected
+                              ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200/80 font-bold"
+                            : "bg-slate-50/70 text-slate-700 border-slate-200/90 hover:bg-white hover:border-slate-300 hover:shadow-2xs"
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] shrink-0 transition-colors ${
+                            isSelected
+                              ? "bg-white text-emerald-600 font-black shadow-2xs"
+                              : "border border-slate-300 bg-white"
+                          }`}
+                        >
+                          {isSelected ? "✓" : ""}
+                        </span>
+                        <span className="whitespace-nowrap tracking-wide">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedProcedures.includes("أخرى") && (
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                    <input
+                      type="text"
+                      disabled={isNurseDisabled}
+                      value={procedureCustom}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProcedureCustom(val);
+                        setProcedureName(computeProcedureName(selectedProcedures, val));
+                        if (fieldErrors.procedureName) {
+                          setFieldErrors((prev) => {
+                            const nextErr = { ...prev };
+                            delete nextErr.procedureName;
+                            return nextErr;
+                          });
+                        }
+                      }}
+                      placeholder="اكتب الإجراء المطلوب بالتفصيل..."
+                      className={`w-full px-4 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all shadow-2xs ${
+                        isNurseDisabled
+                          ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                          : fieldErrors.procedureName
+                          ? "border-rose-400 bg-rose-50/40"
+                          : "border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white"
+                      }`}
+                      autoFocus
+                    />
+                  </div>
                 )}
               </div>
+              {fieldErrors.procedureName && (
+                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureName}</p>
+              )}
+            </div>
+
+            {/* Dedicated Full-Width Row: مكان الإجراء (Multi-Select) */}
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-slate-800">
+                    مكان الإجراء <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-normal">
+                    (يمكنك اختيار مكان واحد أو أكثر)
+                  </span>
+                </div>
+                {selectedLocations.length > 0 && (
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/90 px-3 py-1 rounded-xl shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>تم تحديد ({selectedLocations.length}):</span>
+                    <strong className="text-emerald-950 font-black">
+                      {procedureLocation || selectedLocations.join("، ")}
+                    </strong>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2 sm:gap-2.5">
+                  {PROCEDURE_LOCATIONS.map((loc) => {
+                    const isSelected = selectedLocations.includes(loc);
+                    return (
+                      <button
+                        key={loc}
+                        type="button"
+                        disabled={isNurseDisabled}
+                        onClick={() => {
+                          let next: string[];
+                          if (isSelected) {
+                            next = selectedLocations.filter((l) => l !== loc);
+                          } else {
+                            next = [...selectedLocations, loc];
+                          }
+                          setSelectedLocations(next);
+                          setProcedureLocation(computeProcedureLocation(next, locationCustom));
+                          if (fieldErrors.procedureLocation) {
+                            setFieldErrors((prev) => {
+                              const nextErr = { ...prev };
+                              delete nextErr.procedureLocation;
+                              return nextErr;
+                            });
+                          }
+                        }}
+                        className={`group px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-2 border select-none cursor-pointer ${
+                          isNurseDisabled
+                            ? isSelected
+                              ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200/80 font-bold scale-[1.02]"
+                            : "bg-white text-slate-700 border-slate-200/90 hover:bg-emerald-50/40 hover:border-emerald-300 hover:text-emerald-950 shadow-2xs"
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] shrink-0 transition-colors ${
+                            isSelected
+                              ? "bg-white text-emerald-600 font-black shadow-2xs"
+                              : "border border-slate-300 bg-slate-50 group-hover:border-emerald-300"
+                          }`}
+                        >
+                          {isSelected ? "✓" : ""}
+                        </span>
+                        <span className="whitespace-nowrap tracking-wide">{loc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedLocations.includes("اخرى") && (
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-200 pt-1">
+                    <input
+                      type="text"
+                      disabled={isNurseDisabled}
+                      value={locationCustom}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setLocationCustom(val);
+                        setProcedureLocation(computeProcedureLocation(selectedLocations, val));
+                        if (fieldErrors.procedureLocation) {
+                          setFieldErrors((prev) => {
+                            const nextErr = { ...prev };
+                            delete nextErr.procedureLocation;
+                            return nextErr;
+                          });
+                        }
+                      }}
+                      placeholder="اكتب مكان الإجراء بالتفصيل..."
+                      className={`w-full px-4 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all shadow-2xs ${
+                        isNurseDisabled
+                          ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                          : fieldErrors.procedureLocation
+                          ? "border-rose-400 bg-rose-50/40"
+                          : "border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white"
+                      }`}
+                      autoFocus
+                    />
+                  </div>
+                )}
+              </div>
+              {fieldErrors.procedureLocation && (
+                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureLocation}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1572,22 +1914,12 @@ function PatientEducationContent() {
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div className="flex items-center gap-2">
               <h3 className="text-xs sm:text-sm font-bold text-slate-800">
-                المواضيع التثقيفية المنفذة
+                3. المواضيع التثقيفية المنفذة
               </h3>
               <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-bold">
                 بنود 1-3 تمريض • بنود 4-6 فني الأشعة
               </span>
             </div>
-            {!isLocked && (
-              <button
-                type="button"
-                onClick={handleAddCustomTopic}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl transition-all shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>إضافة موضوع تثقيف آخر</span>
-              </button>
-            )}
           </div>
 
           {fieldErrors.topicsComprehension && (
@@ -1776,6 +2108,81 @@ function PatientEducationContent() {
               </tbody>
             </table>
           </div>
+
+          {/* Wide button to add another education topic */}
+          {!isLocked && (
+            <button
+              type="button"
+              onClick={handleAddCustomTopic}
+              className="w-full py-3 px-4 border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50 text-emerald-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-2xs hover:shadow-xs cursor-pointer active:scale-[0.99]"
+            >
+              <Plus className="w-4 h-4 text-emerald-600" />
+              <span>إضافة تثقيف آخر</span>
+            </button>
+          )}
+        </div>
+
+        {/* SECTION 4: Signatures & Date/Time (توثيق وتاريخ التثقيف الصحي) */}
+        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+          <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-emerald-600" />
+              <span>4. توثيق وتاريخ التثقيف الصحي</span>
+            </h3>
+            <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>توثيق معتمد</span>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                مسؤول التثقيف الصحي
+              </label>
+              <div className="bg-slate-50 px-3.5 py-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs sm:text-sm">
+                <span className="font-bold text-slate-800">
+                  {profile?.full_name || "مسؤول التثقيف"}
+                </span>
+                <span className="text-[10px] bg-white border border-slate-300 text-slate-600 px-2 py-0.5 rounded-md font-bold">
+                  {role === "nurse" ? "التمريض" : role === "technician" ? "فني الأشعة" : "موثق معتمد"}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                تاريخ التثقيف <span className="text-slate-400 font-normal">(آلي)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  readOnly
+                  disabled
+                  value={educationDate}
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
+                />
+                <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                وقت التثقيف <span className="text-slate-400 font-normal">(آلي)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={educationTime ? formatTime12(educationTime) : ""}
+                  placeholder="HH:MM"
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
+                />
+                <Clock className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* BOTTOM ACTION AREA */}
@@ -1849,7 +2256,7 @@ function PatientEducationContent() {
           </div>
         </div>
 
-        {/* Patient and MRN Line */}
+        {/* Patient, MRN and Date/Time Line */}
         <div className="flex justify-between items-center text-xs font-bold py-2 mb-2 border-b border-black">
           <div>
             اسم المريض رباعي :{" "}
@@ -1858,9 +2265,15 @@ function PatientEducationContent() {
             </span>
           </div>
           <div>
-            رقم الملف الطبي ..:{" "}
+            رقم الملف الطبي :{" "}
             <span className="font-normal underline mr-1">
               {mrn || "........................................................."}
+            </span>
+          </div>
+          <div>
+            تاريخ ووقت التثقيف :{" "}
+            <span className="font-mono font-normal underline mr-1">
+              {educationDate} ({formatTime12(educationTime)})
             </span>
           </div>
         </div>
@@ -1956,7 +2369,7 @@ function PatientEducationContent() {
             {topics.map((t, idx) => {
               return (
                 <tr key={idx}>
-                  <td className="border border-black p-1.5">{new Date().toLocaleDateString("ar-EG")}</td>
+                  <td className="border border-black p-1.5 font-mono">{educationDate || new Date().toLocaleDateString("ar-EG")}</td>
                   <td className="border border-black p-1.5 text-right leading-snug">
                     {t.is_custom ? (
                       <>

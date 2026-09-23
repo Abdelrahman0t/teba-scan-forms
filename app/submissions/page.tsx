@@ -103,7 +103,7 @@ export default function SubmissionsPage() {
         patientsRes,
       ] = await Promise.all([
         buildQuery("radiation_exposure_logs", "*"),
-        buildQuery("health_education_assessments", "*, health_education_topic_entries(*)"),
+        buildQuery("health_education_assessments", "*, form_submissions(data), health_education_topic_entries(*)"),
         buildQuery("fall_risk_screenings", "*"),
         buildQuery("fall_risk_adult_assessments", "*"),
         buildQuery("fall_risk_pediatric_assessments", "*"),
@@ -133,7 +133,31 @@ export default function SubmissionsPage() {
       }
 
       setRadLogs((radsRes.data || []).map((r: any) => resolvePatient(r, "radiation", "تسجيل جرعات الأشعة", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-purple-600 bg-purple-50")));
-      setEduLogs((edusRes.data || []).map((e: any) => resolvePatient(e, "education", "التثقيف الصحي للأسرة", "TRC.MRS", "/forms/patient-education", HeartPulse, "text-rose-600 bg-rose-50")));
+      setEduLogs((edusRes.data || []).map((e: any) => {
+        const subData = e.form_submissions?.data || {};
+        const createdDate = e.created_at ? e.created_at.split("T")[0] : "";
+        const createdTime = e.created_at && e.created_at.includes("T") ? e.created_at.split("T")[1].slice(0, 5) : "";
+        const eduDate = e.education_date || subData.education_date || createdDate;
+        const eduTime = e.education_time || subData.education_time || createdTime;
+        const educatorSig = e.educator_signature || e.nurse_signature || subData.educator_name || e.health_education_topic_entries?.[0]?.educator_name || "-";
+        const procLoc = e.procedure_location || subData.procedure_location || "-";
+
+        return resolvePatient(
+          {
+            ...e,
+            education_date: eduDate,
+            education_time: eduTime,
+            educator_signature: educatorSig,
+            procedure_location: procLoc,
+          },
+          "education",
+          "التثقيف الصحي للأسرة",
+          "TRC.MRS",
+          "/forms/patient-education",
+          HeartPulse,
+          "text-rose-600 bg-rose-50"
+        );
+      }));
       setFallScreenLogs((fallScreenRes.data || []).map((fs: any) => resolvePatient(fs, "fall_screen", "المسح المبدئي لخطر السقوط", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")));
       setFallAdultLogs((fallAdultRes.data || []).map((fa: any) => {
         const isHighRisk = Boolean(
@@ -182,7 +206,11 @@ export default function SubmissionsPage() {
         );
       }));
       setAssessmentLogs((assessRes.data || []).map((a: any) => {
-        const plans = Array.isArray(a.plan_of_care) ? a.plan_of_care : [];
+        const rawPlans = Array.isArray(a.plan_of_care) ? a.plan_of_care : [];
+        const plans = rawPlans.map((p: any) => ({
+          ...p,
+          time_frame: (!p?.time_frame || p?.time_frame === "15 دقيقة" || p?.time_frame === "30 دقيقة") ? "5 دقائق" : p.time_frame,
+        }));
         const techPlan = plans.find((p: any) =>
           !p?.responsible?.some((r: string) => r?.includes("طبيب") || r?.includes("أخصائي")) &&
           (
@@ -199,7 +227,7 @@ export default function SubmissionsPage() {
         );
         const resolvedDocSig = a.physician_signature || docPlan?.confirmed_by || null;
         const resolvedTechSig = techPlan?.confirmed_by || (a.tech_signature && a.tech_signature !== resolvedDocSig ? a.tech_signature : null) || null;
-        return resolvePatient({ ...a, physician_signature: resolvedDocSig, tech_signature: resolvedTechSig }, "assessment", "نموذج تقييم المريض الشامل", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-teal-600 bg-teal-50");
+        return resolvePatient({ ...a, plan_of_care: plans, physician_signature: resolvedDocSig, tech_signature: resolvedTechSig }, "assessment", "نموذج تقييم المريض الشامل", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-teal-600 bg-teal-50");
       }));
       setTransferLogs((transRes.data || []).map((t: any) => resolvePatient(t, "transfer", "نموذج نقل المريض (RSTP)", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-sky-600 bg-sky-50")));
     } catch (err) {
@@ -503,8 +531,8 @@ export default function SubmissionsPage() {
 
                       {/* Details Column */}
                       <td className="p-3 text-slate-600 max-w-xs truncate">
-                        {item.formType === "radiation" && `${item.exam_type || "-"} | DLP: ${item.dlp || "-"} | CTDIvol: ${item.ctdivol || "-"}`}
-                        {item.formType === "education" && (item.topics_discussed || "تثقيف وتوعية المريض والأسرة")}
+                        {item.formType === "radiation" && `${item.procedure_name || item.exam_type || "فحص إشعاعي"} | جرعة: ${item.radiation_dose || "-"} mGy`}
+                        {item.formType === "education" && (item.procedure_name ? `${item.procedure_name} • ${item.topics_discussed || "تثقيف صحي"}` : (item.topics_discussed || "تثقيف وتوعية المريض والأسرة"))}
                         {item.formType === "fall_screen" && (
                           <span>
                             النتيجة: <strong>{item.total_score} نقطة</strong> —{" "}

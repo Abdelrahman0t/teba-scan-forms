@@ -21,6 +21,32 @@ export function getFormStatusInfo(item: any): FormStatusInfo {
 
   // Shared Model 1: Comprehensive Patient Assessment
   if (item.formType === "assessment") {
+    // Check procedure name to determine which staff roles are required for completion
+    const rawProc = (item.procedure_name || item.data?.procedure_name || "").toLowerCase();
+    
+    // Radiologist procedures: Echo, U/S, Doppler
+    const needsRadiologist =
+      rawProc.includes("echo") ||
+      rawProc.includes("u/s") ||
+      rawProc.includes("doppler") ||
+      rawProc.includes("سونار") ||
+      rawProc.includes("ايكو") ||
+      rawProc.includes("دوبلر");
+
+    // Technician procedures: X-Ray, MRI, CT
+    const needsTechnician =
+      rawProc.includes("x-ray") ||
+      rawProc.includes("xray") ||
+      rawProc.includes("mri") ||
+      rawProc.includes("ct") ||
+      rawProc.includes("رنين") ||
+      rawProc.includes("مقطعية") ||
+      rawProc.includes("اشعة عادية");
+
+    // If neither matched (e.g. not selected yet or custom procedure), default to requiring both
+    const reqRadiologist = (!needsRadiologist && !needsTechnician) ? true : needsRadiologist;
+    const reqTechnician = (!needsRadiologist && !needsTechnician) ? true : needsTechnician;
+
     const plans = Array.isArray(item.plan_of_care) ? item.plan_of_care : [];
     const fallPlan = plans.find((p: any) =>
       p?.responsible?.includes("التمريض") ||
@@ -64,16 +90,25 @@ export function getFormStatusInfo(item: any): FormStatusInfo {
       missingRoles.push("nurse");
       missingLabels.push("التمريض");
     }
-    if (!hasPhysician) {
+    if (reqRadiologist && !hasPhysician) {
       missingRoles.push("radiologist");
       missingLabels.push("طبيب الأشعة");
     }
-    if (!hasTech) {
+    if (reqTechnician && !hasTech) {
       missingRoles.push("technician");
       missingLabels.push("فني الأشعة");
     }
 
     const isComplete = missingRoles.length === 0;
+
+    let roleDescription = "التمريض";
+    if (reqRadiologist && reqTechnician) {
+      roleDescription = "التمريض + طبيب الأشعة + فني الأشعة";
+    } else if (reqRadiologist) {
+      roleDescription = "التمريض + طبيب الأشعة";
+    } else if (reqTechnician) {
+      roleDescription = "التمريض + فني الأشعة";
+    }
 
     return {
       isShared: true,
@@ -82,7 +117,7 @@ export function getFormStatusInfo(item: any): FormStatusInfo {
       missingLabels,
       badgeLabel: isComplete ? "مكتمل" : "غير مكتمل",
       badgeDesc: isComplete
-        ? "مكتمل (التمريض + طبيب الأشعة + فني الأشعة)"
+        ? `مكتمل (${roleDescription})`
         : `بانتظار: ${missingLabels.join(" + ")}`,
     };
   }

@@ -281,7 +281,7 @@ function PatientTransferContent() {
         group: "0",
         vehicle_ar: "كرسي متحرك – مشي",
         vehicle_en: "Wheelchair – Walking",
-        staff_ar: "مفرد خدمات معاونة",
+        staff_ar: "فرد خدمات معاونة",
         staff_en: "auxiliary service",
         continuousMonitoring: false,
       };
@@ -426,6 +426,8 @@ function PatientTransferContent() {
   function clearPatientFields() {
     setPatientId(null);
     setPatientName("");
+    setGender("");
+    setAge("");
   }
 
   function handleResetSearch() {
@@ -541,9 +543,10 @@ function PatientTransferContent() {
       }
 
       setPatientId(data.id);
-      setPatientName((prev) => prev || data.full_name || "");
-      if (data.gender) setGender((prev) => prev || (data.gender as any));
-      if (data.age) setAge((prev) => (prev !== "" ? prev : data.age));
+      setMrn(data.mrn || cleanMrn);
+      setPatientName(data.full_name || "");
+      setGender((data.gender as any) || "");
+      setAge(data.age !== null && data.age !== undefined ? data.age : "");
 
       // Check if patient already has an INCOMPLETE transfer record to resume
       const { data: transfers } = await supabase
@@ -571,11 +574,10 @@ function PatientTransferContent() {
     if (!mrn.trim()) errors.mrn = "رقم الملف الطبي مطلوب";
     if (!patientName.trim()) errors.patientName = "اسم المريض رباعي مطلوب";
     
-    // Route & reason are required when doctor/admin fills the transfer model
+    // Route is required when doctor/admin fills the transfer model (reason is optional)
     if (canEditRadiologist) {
       if (!fromLocation.trim()) errors.fromLocation = "مكان النقل (من) مطلوب";
       if (!toLocation.trim()) errors.toLocation = "وجهة النقل (إلى) مطلوبة";
-      if (!transferReason.trim()) errors.transferReason = "سبب النقل مطلوب";
     }
 
     setFieldErrors(errors);
@@ -958,7 +960,13 @@ function PatientTransferContent() {
                       <input
                         type="text"
                         value={searchMrnInput}
-                        onChange={(e) => setSearchMrnInput(e.target.value)}
+                        onChange={(e) => {
+                          setSearchMrnInput(e.target.value);
+                          if (!e.target.value.trim()) {
+                            clearPatientFields();
+                            setSearchStatus(null);
+                          }
+                        }}
                         placeholder="رقم الملف الطبي..."
                         className="px-3.5 py-2 border border-sky-300 focus:border-sky-500 rounded-xl text-xs bg-white text-slate-900 outline-none w-full sm:w-48 font-mono shadow-2xs font-bold placeholder:text-slate-400"
                         onKeyDown={(e) => {
@@ -1059,10 +1067,18 @@ function PatientTransferContent() {
                   value={mrn}
                   onChange={(e) => {
                     setMrn(e.target.value);
-                    searchPatientByMrn(e.target.value);
+                    if (!e.target.value.trim()) {
+                      clearPatientFields();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchPatientByMrn(mrn);
+                    }
                   }}
                   placeholder="رقم الملف الطبي..."
-                  className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
+                  className={`w-full pl-24 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
                     isDoctorDisabled
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
@@ -1070,7 +1086,15 @@ function PatientTransferContent() {
                       : "border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   }`}
                 />
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <button
+                  type="button"
+                  disabled={isDoctorDisabled}
+                  onClick={() => searchPatientByMrn(mrn)}
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#481454] hover:bg-[#380e42] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>بحث</span>
+                </button>
               </div>
               {fieldErrors.mrn && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.mrn}</p>
@@ -1103,42 +1127,26 @@ function PatientTransferContent() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">تاريخ النقل</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">تاريخ النقل <span className="text-slate-400 font-normal">(آلي)</span></label>
               <input
                 type="date"
-                disabled={isDoctorDisabled}
+                readOnly
+                disabled
                 value={transferDate}
-                onChange={(e) => setTransferDate(e.target.value)}
-                className={`w-full px-3 py-2 border border-slate-300 rounded-xl text-xs sm:text-sm ${
-                  isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
-                }`}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">الوقت</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">الوقت <span className="text-slate-400 font-normal">(آلي)</span></label>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  disabled={isDoctorDisabled}
-                  value={transferTime}
-                  onChange={(e) => handleTransferTimeChange(e.target.value)}
-                  placeholder="07:06"
-                  className={`w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono ${
-                    isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
-                  }`}
+                  readOnly
+                  disabled
+                  value={`${transferTime} ${transferPeriod === "AM" ? "صباحاً" : "مساءً"}`}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
                 />
-                <select
-                  disabled={isDoctorDisabled}
-                  value={transferPeriod}
-                  onChange={(e) => setTransferPeriod(e.target.value as any)}
-                  className={`px-2.5 py-2 border border-slate-300 rounded-xl text-xs font-medium ${
-                    isDoctorDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
-                  }`}
-                >
-                  <option value="AM">صباحاً (AM)</option>
-                  <option value="PM">مساءً (PM)</option>
-                </select>
               </div>
             </div>
 
@@ -1188,7 +1196,7 @@ function PatientTransferContent() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                سبب النقل <span className="text-rose-500">*</span>
+                سبب النقل <span className="text-slate-400 font-normal">(اختياري)</span>
               </label>
               <input
                 type="text"

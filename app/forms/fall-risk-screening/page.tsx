@@ -107,6 +107,7 @@ function FallRiskScreeningContent() {
   const [age, setAge] = useState<number | "">("");
 
   // Risk Factors (Boolean flags)
+  const [noneOfAbove, setNoneOfAbove] = useState(false);
   const [factors, setFactors] = useState<{ [key: string]: boolean }>({
     gait_disturbance: false,
     use_mobility_aids: false,
@@ -134,7 +135,7 @@ function FallRiskScreeningContent() {
     }
   }, [profile, screenerSignature]);
 
-  const hasAnyRisk = Object.values(factors).some(Boolean);
+  const hasAnyRisk = !noneOfAbove && Object.values(factors).some(Boolean);
 
   // When any risk factor is selected, automatically apply all 3 required actions per PDF
   useEffect(() => {
@@ -153,6 +154,9 @@ function FallRiskScreeningContent() {
   useEffect(() => {
     if (age !== "") {
       const isChild = Number(age) < 15;
+      if (isChild) {
+        setNoneOfAbove(false);
+      }
       setFactors((prev) => ({ ...prev, child_under_15: isChild }));
     }
   }, [age]);
@@ -203,6 +207,15 @@ function FallRiskScreeningContent() {
           sensory_impairment: data.sensory_impairment || false,
           child_under_15: data.child_under_15 || false,
         });
+        const hasAnyFactor = Boolean(
+          data.gait_disturbance ||
+          data.use_mobility_aids ||
+          data.bed_ridden ||
+          data.mental_disability ||
+          data.sensory_impairment ||
+          data.child_under_15
+        );
+        setNoneOfAbove(!hasAnyFactor && !data.is_high_risk);
         setFBadgeApplied(data.f_badge_applied !== undefined ? data.f_badge_applied : true);
         setWheelchairUsed(data.wheelchair_used || false);
         setEducationProvided(data.education_provided !== undefined ? data.education_provided : true);
@@ -223,6 +236,7 @@ function FallRiskScreeningContent() {
     setPatientName("");
     setGender("");
     setAge("");
+    setNoneOfAbove(false);
     setFactors({
       gait_disturbance: false,
       use_mobility_aids: false,
@@ -254,7 +268,8 @@ function FallRiskScreeningContent() {
 
       if (patient) {
         setPatientId(patient.id);
-        setPatientName((prev) => prev || patient.full_name || "");
+        setMrn(patient.mrn || cleanMrn);
+        setPatientName(patient.full_name || "");
 
         let resolvedGender = normalizeGender(patient.gender);
         let resolvedAge = (patient.age !== null && patient.age !== undefined && patient.age !== "") ? patient.age : null;
@@ -284,12 +299,8 @@ function FallRiskScreeningContent() {
           }
         }
 
-        if (resolvedGender) {
-          setGender((prev) => prev || resolvedGender);
-        }
-        if (resolvedAge !== null) {
-          setAge((prev) => (prev !== "" ? prev : resolvedAge));
-        }
+        setGender(resolvedGender || "");
+        setAge(resolvedAge !== null && resolvedAge !== undefined ? resolvedAge : "");
       } else {
         // No match found -> clear all auto-filled fields
         clearPatientFields();
@@ -507,6 +518,7 @@ function FallRiskScreeningContent() {
     setPatientId(null);
     setGender("");
     setAge("");
+    setNoneOfAbove(false);
     setFactors({
       gait_disturbance: false,
       use_mobility_aids: false,
@@ -587,10 +599,18 @@ function FallRiskScreeningContent() {
                   value={mrn}
                   onChange={(e) => {
                     setMrn(e.target.value);
-                    searchPatientByMrn(e.target.value);
+                    if (!e.target.value.trim()) {
+                      clearPatientFields();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchPatientByMrn(mrn);
+                    }
                   }}
                   placeholder="رقم الملف الطبي..."
-                  className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
+                  className={`w-full pl-24 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
                     isLocked
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
@@ -598,7 +618,15 @@ function FallRiskScreeningContent() {
                       : "border-slate-300 focus:border-[#1d8a98] focus:ring-2 focus:ring-[#1d8a98]/20"
                   }`}
                 />
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <button
+                  type="button"
+                  disabled={isLocked}
+                  onClick={() => searchPatientByMrn(mrn)}
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#1d8a98] hover:bg-[#167480] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>بحث</span>
+                </button>
               </div>
               {fieldErrors.mrn && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.mrn}</p>
@@ -717,13 +745,17 @@ function FallRiskScreeningContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {RISK_FACTORS.map((rf) => {
-              const isChecked = !!factors[rf.id];
+              const isChecked = !noneOfAbove && !!factors[rf.id];
               return (
                 <div
                   key={rf.id}
                   onClick={() => {
                     if (isLocked) return;
-                    setFactors((prev) => ({ ...prev, [rf.id]: !prev[rf.id] }));
+                    setFactors((prev) => {
+                      const nextVal = !prev[rf.id];
+                      if (nextVal) setNoneOfAbove(false);
+                      return { ...prev, [rf.id]: nextVal };
+                    });
                   }}
                   className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 select-none ${
                     isChecked
@@ -744,6 +776,41 @@ function FallRiskScreeningContent() {
                 </div>
               );
             })}
+
+            {/* None of the above */}
+            <div
+              onClick={() => {
+                if (isLocked) return;
+                const nextVal = !noneOfAbove;
+                setNoneOfAbove(nextVal);
+                if (nextVal) {
+                  setFactors({
+                    gait_disturbance: false,
+                    use_mobility_aids: false,
+                    bed_ridden: false,
+                    mental_disability: false,
+                    sensory_impairment: false,
+                    child_under_15: false,
+                  });
+                }
+              }}
+              className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 select-none md:col-span-2 ${
+                noneOfAbove
+                  ? "bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-xs"
+                  : "bg-slate-50/60 border-slate-200 text-slate-700 hover:bg-slate-100"
+              } ${isLocked ? "cursor-not-allowed opacity-80" : ""}`}
+            >
+              <input
+                type="checkbox"
+                checked={noneOfAbove}
+                readOnly
+                className="accent-emerald-600 w-4 h-4 rounded mt-0.5 pointer-events-none shrink-0"
+              />
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold block">لا شيء مما سبق</span>
+                <span className="text-[11px] text-slate-500 font-medium block">None of the above</span>
+              </div>
+            </div>
           </div>
 
           {/* Fall Risk Interventions Banner */}
@@ -833,30 +900,30 @@ function FallRiskScreeningContent() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">التاريخ</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">التاريخ <span className="text-slate-400 font-normal">(آلي)</span></label>
               <div className="relative">
                 <input
                   type="date"
-                  disabled={isLocked}
+                  readOnly
+                  disabled
                   value={screeningDate}
-                  onChange={(e) => setScreeningDate(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-300 rounded-xl outline-none text-xs sm:text-sm bg-white"
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
                 />
-                <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">الوقت</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">الوقت <span className="text-slate-400 font-normal">(آلي)</span></label>
               <div className="relative">
                 <input
                   type="text"
-                  disabled={isLocked}
-                  value={screeningTime}
-                  onChange={(e) => setScreeningTime(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-300 rounded-xl outline-none text-xs sm:text-sm bg-white font-mono"
+                  readOnly
+                  disabled
+                  value={screeningTime ? formatTime12(screeningTime) : ""}
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
                 />
-                <Clock className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Clock className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
               </div>
             </div>
           </div>
@@ -963,13 +1030,21 @@ function FallRiskScreeningContent() {
             {RISK_FACTORS.map((rf) => (
               <div key={rf.id} className="flex items-start gap-2">
                 <span className="font-bold font-mono text-sm">
-                  {factors[rf.id] ? "☑" : "☐"}
+                  {!noneOfAbove && factors[rf.id] ? "☑" : "☐"}
                 </span>
                 <div>
                   <span className="font-bold">{rf.label_en}</span> — <span>{rf.label_ar}</span>
                 </div>
               </div>
             ))}
+            <div className="flex items-start gap-2">
+              <span className="font-bold font-mono text-sm">
+                {noneOfAbove || (!hasAnyRisk && !Object.values(factors).some(Boolean)) ? "☑" : "☐"}
+              </span>
+              <div>
+                <span className="font-bold">None of the above</span> — <span>لا شيء مما سبق</span>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -218,7 +218,7 @@ export default function SubmissionDetailModal({
                   <span>بيانات الفحص والجرعات الإشعاعية وموقع الإجراء</span>
                 </h5>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-purple-100">
-                  <div><span className="text-slate-400 block text-[11px]">اسم الإجراء:</span><strong className="text-slate-900">{submission.procedure_name || "-"}</strong></div>
+                  <div><span className="text-slate-400 block text-[11px]">الإجراء المطلوب:</span><strong className="text-slate-900 font-bold">{submission.procedure_name || "-"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">المكان / الجهاز:</span><strong className="text-slate-900">{submission.procedure_location || "قسم الأشعة"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">تاريخ الفحص:</span><strong className="text-slate-900 font-mono">{submission.exposure_date || "-"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">وقت الفحص:</span><strong className="text-slate-900 font-mono">{formatTime12(submission.exposure_time)}</strong></div>
@@ -279,11 +279,12 @@ export default function SubmissionDetailModal({
                   <HeartPulse className="w-4 h-4 text-rose-600" />
                   <span>تقييم الاحتياجات التعليمية والقابلية للتعلم</span>
                 </h5>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-white p-3.5 rounded-xl border border-rose-100">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-white p-3.5 rounded-xl border border-rose-100">
                   <div><span className="text-slate-400 block text-[11px]">المستوى التعليمي:</span><strong>{submission.education_level || "-"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">القابلية للتعلم:</span><strong>{submission.learning_receptivity || "-"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">المتلقي للتثقيف:</span><strong>{submission.target_recipient || "-"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">الإجراء المطلوب:</span><strong>{submission.procedure_name || "-"}</strong></div>
+                  <div><span className="text-slate-400 block text-[11px]">مكان الإجراء:</span><strong className="text-emerald-800">{submission.procedure_location || "-"}</strong></div>
                   <div><span className="text-slate-400 block text-[11px]">لغة التثقيف:</span><strong>{submission.language || "العربية"}</strong></div>
                 </div>
               </div>
@@ -426,11 +427,20 @@ export default function SubmissionDetailModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3.5 rounded-2xl border">
                 <div>
                   <span className="text-slate-400 block text-[11px]">مسؤول التثقيف الصحي:</span>
-                  <strong className="text-slate-900">{submission.educator_signature || submission.nurse_signature || "-"}</strong>
+                  <strong className="text-slate-900">
+                    {submission.educator_signature || submission.nurse_signature || submission.health_education_topic_entries?.[0]?.educator_name || "-"}
+                  </strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">تاريخ ووقت التثقيف:</span>
-                  <strong className="font-mono">{submission.education_date || "-"} ({formatTime12(submission.education_time)})</strong>
+                  <strong className="font-mono">
+                    {submission.education_date || (submission.created_at ? submission.created_at.split("T")[0] : "-")}
+                    {submission.education_time
+                      ? ` (${formatTime12(submission.education_time)})`
+                      : submission.created_at && submission.created_at.includes("T")
+                      ? ` (${formatTime12(submission.created_at.split("T")[1].slice(0, 5))})`
+                      : ""}
+                  </strong>
                 </div>
               </div>
             </div>
@@ -893,7 +903,21 @@ export default function SubmissionDetailModal({
                   <div className="space-y-1 text-slate-700">
                     <div><span className="text-slate-400">التشخيص:</span> <strong>{submission.diagnosis || "-"}</strong></div>
                     <div><span className="text-slate-400">الإجراء المطلوب:</span> <strong>{submission.procedure_name || "-"}</strong></div>
-                    <div><span className="text-slate-400">التاريخ المرضي والجراحي:</span> <span className="text-slate-800">{submission.medical_surgical_history || "لا يوجد"}</span></div>
+                    {submission.medical_surgical_history && submission.medical_surgical_history.includes("|") ? (
+                      <>
+                        {submission.medical_surgical_history.split("|").map((part: string, idx: number) => {
+                          const [lbl, ...val] = part.split(":");
+                          return (
+                            <div key={idx}>
+                              <span className="text-slate-400">{lbl?.trim()}:</span>{" "}
+                              <span className="text-slate-800 font-medium">{val.join(":").trim() || "-"}</span>
+                            </div>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <div><span className="text-slate-400">التاريخ المرضي والجراحي:</span> <span className="text-slate-800">{submission.medical_surgical_history || "لا يوجد"}</span></div>
+                    )}
                     <div><span className="text-slate-400">حالة التدخين:</span> <strong className="text-slate-800">{submission.is_smoker ? "مدخن 🚬" : "غير مدخن 🚭"}</strong></div>
                   </div>
                 </div>
@@ -1079,6 +1103,10 @@ export default function SubmissionDetailModal({
                         {submission.plan_of_care.map((plan: any, i: number) => {
                           const interventionsText = plan.intervention || (Array.isArray(plan.interventions) && plan.interventions.length > 0 ? plan.interventions.join("، ") : "-");
                           const respText = Array.isArray(plan.responsible) ? plan.responsible.join("، ") : (plan.responsible || "-");
+                          const rawTimeFrame = plan.time_frame;
+                          const displayTimeFrame = (!rawTimeFrame || rawTimeFrame === "15 دقيقة" || rawTimeFrame === "30 دقيقة")
+                            ? "5 دقائق"
+                            : rawTimeFrame;
 
                           return (
                             <tr key={i} className="hover:bg-slate-50/50">
@@ -1089,7 +1117,7 @@ export default function SubmissionDetailModal({
                               </td>
                               <td className="p-2.5 text-center">
                                 <div className="text-[10px] text-slate-500 font-medium mb-1">
-                                  {respText} {plan.time_frame ? `(${plan.time_frame})` : ""}
+                                  {respText} {displayTimeFrame ? `(${displayTimeFrame})` : ""}
                                 </div>
                                 <span className="bg-teal-50 text-teal-800 px-2 py-0.5 rounded text-[11px] font-medium border border-teal-200 block">
                                   {plan.evaluation || "مستقر"}
@@ -1126,6 +1154,11 @@ export default function SubmissionDetailModal({
                 <div>
                   <span className="text-slate-400 block text-[11px]">توقيع فني الأشعة:</span>
                   {(() => {
+                    const rawProc = (submission.procedure_name || submission.data?.procedure_name || "").toLowerCase();
+                    const needsRad = rawProc.includes("echo") || rawProc.includes("u/s") || rawProc.includes("doppler") || rawProc.includes("سونار") || rawProc.includes("ايكو") || rawProc.includes("دوبلر");
+                    const needsTech = rawProc.includes("x-ray") || rawProc.includes("xray") || rawProc.includes("mri") || rawProc.includes("ct") || rawProc.includes("رنين") || rawProc.includes("مقطعية") || rawProc.includes("اشعة عادية");
+                    const reqTech = (!needsRad && !needsTech) ? true : needsTech;
+
                     const techPlan = Array.isArray(submission.plan_of_care)
                       ? submission.plan_of_care.find((p: any) =>
                           !p?.responsible?.some((r: string) => r?.includes("طبيب") || r?.includes("أخصائي")) &&
@@ -1139,9 +1172,13 @@ export default function SubmissionDetailModal({
                     const rawTechSig = submission.tech_signature;
                     const isDuplicateOfDoc = rawTechSig && submission.physician_signature && rawTechSig === submission.physician_signature;
                     const techSig = techPlan?.confirmed_by || (!isDuplicateOfDoc ? rawTechSig : null);
-                    return techSig ? (
-                      <strong className="text-teal-700">{techSig}</strong>
-                    ) : (
+                    if (techSig) {
+                      return <strong className="text-teal-700">{techSig}</strong>;
+                    }
+                    if (!reqTech) {
+                      return <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-medium inline-block">غير مطلوب لهذا الفحص</span>;
+                    }
+                    return (
                       <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-medium inline-block">بانتظار فني الأشعة</span>
                     );
                   })()}
@@ -1149,6 +1186,11 @@ export default function SubmissionDetailModal({
                 <div>
                   <span className="text-slate-400 block text-[11px]">توقيع طبيب الأشعة:</span>
                   {(() => {
+                    const rawProc = (submission.procedure_name || submission.data?.procedure_name || "").toLowerCase();
+                    const needsRad = rawProc.includes("echo") || rawProc.includes("u/s") || rawProc.includes("doppler") || rawProc.includes("سونار") || rawProc.includes("ايكو") || rawProc.includes("دوبلر");
+                    const needsTech = rawProc.includes("x-ray") || rawProc.includes("xray") || rawProc.includes("mri") || rawProc.includes("ct") || rawProc.includes("رنين") || rawProc.includes("مقطعية") || rawProc.includes("اشعة عادية");
+                    const reqDoc = (!needsRad && !needsTech) ? true : needsRad;
+
                     const docPlan = Array.isArray(submission.plan_of_care)
                       ? submission.plan_of_care.find((p: any) =>
                           p?.responsible?.includes("أخصائي الأشعة") ||
@@ -1158,9 +1200,13 @@ export default function SubmissionDetailModal({
                         )
                       : null;
                     const docSig = submission.physician_signature || docPlan?.confirmed_by;
-                    return docSig ? (
-                      <strong className="text-emerald-700">{docSig}</strong>
-                    ) : (
+                    if (docSig) {
+                      return <strong className="text-emerald-700">{docSig}</strong>;
+                    }
+                    if (!reqDoc) {
+                      return <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-medium inline-block">غير مطلوب لهذا الفحص</span>;
+                    }
+                    return (
                       <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-medium inline-block">بانتظار طبيب الأشعة</span>
                     );
                   })()}

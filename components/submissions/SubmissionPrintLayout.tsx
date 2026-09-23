@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from "react";
@@ -26,8 +27,8 @@ function PrintHeader({
   const mrn = submission.resolvedMrn || submission.mrn || "-";
   const age = submission.age !== undefined && submission.age !== null ? submission.age : (submission.resolvedAge || "-");
   const gender = submission.gender || submission.resolvedGender || "-";
-  const dateStr = submission.visit_date || submission.exposure_date || submission.screening_date || submission.assessment_date || submission.transfer_date || (submission.created_at ? new Date(submission.created_at).toLocaleDateString("ar-EG") : "-");
-  const timeStr = formatTime12(submission.visit_time || submission.exposure_time || submission.screening_time || submission.assessment_time || submission.transfer_time) || (submission.created_at ? new Date(submission.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }) : "-");
+  const dateStr = submission.visit_date || submission.exposure_date || submission.screening_date || submission.assessment_date || submission.transfer_date || submission.education_date || (submission.created_at ? new Date(submission.created_at).toLocaleDateString("ar-EG") : "-");
+  const timeStr = formatTime12(submission.visit_time || submission.exposure_time || submission.screening_time || submission.assessment_time || submission.transfer_time || submission.education_time) || (submission.created_at ? new Date(submission.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" }) : "-");
 
   return (
     <div className="mb-3 print-avoid-break">
@@ -207,8 +208,10 @@ export default function SubmissionPrintLayout({ submission }: SubmissionPrintLay
             submission={submission}
             extraPatientRow={
               <tr>
-                <td className="border border-black p-1.5 font-bold bg-slate-50">الإجراء المطلوب:</td>
-                <td className="border border-black p-1.5" colSpan={3}>{submission.procedure_name || "-"}</td>
+                <td className="border border-black p-1.5 font-bold bg-slate-50 w-[18%]">الإجراء المطلوب:</td>
+                <td className="border border-black p-1.5 w-[32%]">{submission.procedure_name || "-"}</td>
+                <td className="border border-black p-1.5 font-bold bg-slate-50 w-[18%]">مكان الإجراء:</td>
+                <td className="border border-black p-1.5 w-[32%]">{submission.procedure_location || "-"}</td>
               </tr>
             }
           />
@@ -284,7 +287,7 @@ export default function SubmissionPrintLayout({ submission }: SubmissionPrintLay
             signatures={[
               {
                 roleTitle: "توقيع مسؤول التثقيف الصحي / التمريض",
-                name: submission.educator_signature || submission.nurse_signature,
+                name: submission.educator_signature || submission.nurse_signature || submission.health_education_topic_entries?.[0]?.educator_name || "-",
               },
             ]}
           />
@@ -714,6 +717,9 @@ export default function SubmissionPrintLayout({ submission }: SubmissionPrintLay
                         <td className="border border-black p-1.5 text-[9px] leading-snug">{interventionsText}</td>
                         <td className="border border-black p-1.5 text-center">
                           <div className="font-bold">{p.evaluation || "مستقر"}</div>
+                          <div className="text-[8px] text-slate-600 font-mono mt-0.5">
+                            {(!p.time_frame || p.time_frame === "15 دقيقة" || p.time_frame === "30 دقيقة") ? "5 دقائق" : p.time_frame}
+                          </div>
                           {p.confirmed_by && (
                             <div className="text-[9px] text-slate-700 font-mono mt-0.5">
                               ✓ {p.confirmed_by}
@@ -728,24 +734,42 @@ export default function SubmissionPrintLayout({ submission }: SubmissionPrintLay
             </div>
           )}
 
-          {/* Section 4: Tri-Signatures Matrix */}
-          <PrintSignatureBlock
-            footerCode="TRC-ICD"
-            signatures={[
+          {/* Section 4: Signatures Matrix */}
+          {(() => {
+            const rawProc = (submission.procedure_name || submission.data?.procedure_name || "").toLowerCase();
+            const needsRad = rawProc.includes("echo") || rawProc.includes("u/s") || rawProc.includes("doppler") || rawProc.includes("سونار") || rawProc.includes("ايكو") || rawProc.includes("دوبلر");
+            const needsTech = rawProc.includes("x-ray") || rawProc.includes("xray") || rawProc.includes("mri") || rawProc.includes("ct") || rawProc.includes("رنين") || rawProc.includes("مقطعية") || rawProc.includes("اشعة عادية");
+            const reqDoc = (!needsRad && !needsTech) ? true : needsRad;
+            const reqTech = (!needsRad && !needsTech) ? true : needsTech;
+
+            const sigs = [
               {
                 roleTitle: "توقيع التمريض (Nurse Signature)",
                 name: submission.nurse_signature,
               },
-              {
+            ];
+
+            if (reqTech || submission.tech_signature) {
+              sigs.push({
                 roleTitle: "توقيع فني الأشعة (Technician Signature)",
-                name: submission.tech_signature,
-              },
-              {
+                name: submission.tech_signature || (reqTech ? "" : "غير مطلوب لهذا الفحص"),
+              });
+            }
+
+            if (reqDoc || submission.physician_signature) {
+              sigs.push({
                 roleTitle: "توقيع طبيب الأشعة (Radiologist Signature)",
-                name: submission.physician_signature,
-              },
-            ]}
-          />
+                name: submission.physician_signature || (reqDoc ? "" : "غير مطلوب لهذا الفحص"),
+              });
+            }
+
+            return (
+              <PrintSignatureBlock
+                footerCode="TRC-ICD"
+                signatures={sigs}
+              />
+            );
+          })()}
         </div>
       )}
 

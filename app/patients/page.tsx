@@ -152,7 +152,7 @@ export default function PatientsPage() {
         transRes,
       ] = await Promise.all([
         supabase.from("radiation_exposure_logs").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").eq("patient_id", pid).order("created_at", { ascending: false }),
+        supabase.from("health_education_assessments").select("*, form_submissions(data), health_education_topic_entries(*)").eq("patient_id", pid).order("created_at", { ascending: false }),
         supabase.from("fall_risk_screenings").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
         supabase.from("fall_risk_adult_assessments").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
         supabase.from("fall_risk_pediatric_assessments").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
@@ -188,12 +188,41 @@ export default function PatientsPage() {
 
       const allItems = [
         ...(radsRes.data || []).map((r) => attachMeta(r, "radiation", "تسجيل جرعات الأشعة", "radiation", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-sky-600 bg-sky-50")),
-        ...(edusRes.data || []).map((e) => attachMeta(e, "education", "التثقيف الصحي للمريض والأسرة", "education", "TRC.MRS", "/forms/patient-education", HeartPulse, "text-emerald-600 bg-emerald-50")),
+        ...(edusRes.data || []).map((e: any) => {
+          const subData = e.form_submissions?.data || {};
+          const createdDate = e.created_at ? e.created_at.split("T")[0] : "";
+          const createdTime = e.created_at && e.created_at.includes("T") ? e.created_at.split("T")[1].slice(0, 5) : "";
+          const eduDate = e.education_date || subData.education_date || createdDate;
+          const eduTime = e.education_time || subData.education_time || createdTime;
+          const educatorSig = e.educator_signature || e.nurse_signature || subData.educator_name || e.health_education_topic_entries?.[0]?.educator_name || "-";
+          const procLoc = e.procedure_location || subData.procedure_location || "-";
+
+          return attachMeta(
+            {
+              ...e,
+              education_date: eduDate,
+              education_time: eduTime,
+              educator_signature: educatorSig,
+              procedure_location: procLoc,
+            },
+            "education",
+            "التثقيف الصحي للمريض والأسرة",
+            "education",
+            "TRC.MRS",
+            "/forms/patient-education",
+            HeartPulse,
+            "text-emerald-600 bg-emerald-50"
+          );
+        }),
         ...(fallScreenRes.data || []).map((f) => attachMeta(f, "fall_screen", "المسح المبدئي لخطر السقوط", "fall_screen", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")),
         ...(fallAdultRes.data || []).map((fa) => attachMeta(fa, "fall_adult", "تقييم مخاطر السقوط للكبار (Hendrich II)", "fall_adult", "TRC-ICD", "/forms/fall-risk-adult", ShieldAlert, "text-rose-600 bg-rose-50")),
         ...(fallPedRes.data || []).map((fp) => attachMeta(fp, "fall_ped", "مقياس مخاطر سقوط الأطفال (Humpty Dumpty)", "fall_ped", "TRC.ICD", "/forms/fall-risk-pediatric", Baby, "text-cyan-600 bg-cyan-50")),
         ...(assessRes.data || []).map((a) => {
-          const plans = Array.isArray(a.plan_of_care) ? a.plan_of_care : [];
+          const rawPlans = Array.isArray(a.plan_of_care) ? a.plan_of_care : [];
+          const plans = rawPlans.map((p: any) => ({
+            ...p,
+            time_frame: (!p?.time_frame || p?.time_frame === "15 دقيقة" || p?.time_frame === "30 دقيقة") ? "5 دقائق" : p.time_frame,
+          }));
           const techPlan = plans.find((p: any) =>
             !p?.responsible?.some((r: string) => r?.includes("طبيب") || r?.includes("أخصائي")) &&
             (
@@ -210,7 +239,7 @@ export default function PatientsPage() {
           );
           const resolvedDocSig = a.physician_signature || docPlan?.confirmed_by || null;
           const resolvedTechSig = techPlan?.confirmed_by || (a.tech_signature && a.tech_signature !== resolvedDocSig ? a.tech_signature : null) || null;
-          return attachMeta({ ...a, physician_signature: resolvedDocSig, tech_signature: resolvedTechSig }, "assessment", "نموذج تقييم المريض الشامل", "assessment", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-indigo-600 bg-indigo-50");
+          return attachMeta({ ...a, plan_of_care: plans, physician_signature: resolvedDocSig, tech_signature: resolvedTechSig }, "assessment", "نموذج تقييم المريض الشامل", "assessment", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-indigo-600 bg-indigo-50");
         }),
         ...(transRes.data || []).map((t) => attachMeta(t, "transfer", "نموذج نقل المريض (RSTP)", "transfer", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-blue-600 bg-blue-50")),
       ];
@@ -559,6 +588,12 @@ export default function PatientsPage() {
                                     {item.formType === "transfer" && (
                                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                                         RSTP: {item.total_rstp_score} نقطة • المجموعة {item.group_code}
+                                      </span>
+                                    )}
+
+                                    {item.procedure_name && (
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                        الإجراء المطلوب: {item.procedure_name}
                                       </span>
                                     )}
                                   </div>

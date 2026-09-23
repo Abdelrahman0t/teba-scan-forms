@@ -264,7 +264,8 @@ function FallRiskAdultContent() {
       }
 
       setPatientId(patient.id);
-      setPatientName((prev) => prev || patient.full_name || "");
+      setMrn(patient.mrn || cleanMrn);
+      setPatientName(patient.full_name || "");
 
       let resolvedGender = normalizeGender(patient.gender);
       let resolvedAge = (patient.age !== null && patient.age !== undefined && patient.age !== "") ? patient.age : null;
@@ -292,12 +293,8 @@ function FallRiskAdultContent() {
         }
       }
 
-      if (resolvedGender) {
-        setGender((prev) => prev || resolvedGender);
-      }
-      if (resolvedAge !== null) {
-        setAge((prev) => (prev !== "" ? prev : resolvedAge));
-      }
+      setGender(resolvedGender || "");
+      setAge(resolvedAge !== null && resolvedAge !== undefined ? resolvedAge : "");
     } catch (err) {
       console.error("searchPatientByMrn error:", err);
     }
@@ -617,10 +614,18 @@ function FallRiskAdultContent() {
                   value={mrn}
                   onChange={(e) => {
                     setMrn(e.target.value);
-                    searchPatientByMrn(e.target.value);
+                    if (!e.target.value.trim()) {
+                      clearPatientFields();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchPatientByMrn(mrn);
+                    }
                   }}
                   placeholder="رقم الملف الطبي..."
-                  className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
+                  className={`w-full pl-24 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
                     isLocked
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
@@ -628,7 +633,15 @@ function FallRiskAdultContent() {
                       : "border-slate-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
                   }`}
                 />
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <button
+                  type="button"
+                  disabled={isLocked}
+                  onClick={() => searchPatientByMrn(mrn)}
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#481454] hover:bg-[#380e42] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>بحث</span>
+                </button>
               </div>
               {fieldErrors.mrn && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.mrn}</p>
@@ -1113,30 +1126,30 @@ function FallRiskAdultContent() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">التاريخ</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">التاريخ <span className="text-slate-400 font-normal">(آلي)</span></label>
               <div className="relative">
                 <input
                   type="date"
-                  disabled={isLocked}
+                  readOnly
+                  disabled
                   value={assessmentDate}
-                  onChange={(e) => setAssessmentDate(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-300 rounded-xl outline-none text-xs sm:text-sm bg-white"
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
                 />
-                <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">الوقت</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">الوقت <span className="text-slate-400 font-normal">(آلي)</span></label>
               <div className="relative">
                 <input
                   type="text"
-                  disabled={isLocked}
-                  value={assessmentTime}
-                  onChange={(e) => setAssessmentTime(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-300 rounded-xl outline-none text-xs sm:text-sm bg-white font-mono"
+                  readOnly
+                  disabled
+                  value={assessmentTime ? formatTime12(assessmentTime) : ""}
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
                 />
-                <Clock className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Clock className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
               </div>
             </div>
           </div>

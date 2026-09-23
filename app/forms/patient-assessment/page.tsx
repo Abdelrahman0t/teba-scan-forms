@@ -25,6 +25,7 @@ import {
   Loader2,
   RotateCcw,
   Info as InfoIcon,
+  ChevronDown,
 } from "lucide-react";
 
 import { getCurrentTimeShort, getCurrentDate, sanitizeSqlTime, formatTime12 } from "@/lib/timeUtils";
@@ -84,6 +85,35 @@ function normalizeGender(val: any): "ذكر" | "انثي" | "" {
   return "";
 }
 
+export function getRequiredAssessmentRoles(procedureStr: string, selectedProcs?: string[]) {
+  const combined = [procedureStr || "", ...(selectedProcs || [])].join(" ").toLowerCase();
+
+  // Echo, U/S, Doppler -> Radiologist
+  const needsRadiologist =
+    combined.includes("echo") ||
+    combined.includes("u/s") ||
+    combined.includes("doppler") ||
+    combined.includes("سونار") ||
+    combined.includes("ايكو") ||
+    combined.includes("دوبلر");
+
+  // X-Ray, MRI, CT -> Technician
+  const needsTechnician =
+    combined.includes("x-ray") ||
+    combined.includes("xray") ||
+    combined.includes("mri") ||
+    combined.includes("ct") ||
+    combined.includes("رنين") ||
+    combined.includes("مقطعية") ||
+    combined.includes("اشعة عادية");
+
+  if (!needsRadiologist && !needsTechnician) {
+    return { needsRadiologist: true, needsTechnician: true };
+  }
+
+  return { needsRadiologist, needsTechnician };
+}
+
 function PatientAssessmentContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
@@ -132,7 +162,122 @@ function PatientAssessmentContent() {
   // Diagnosis & Procedures
   const [diagnosis, setDiagnosis] = useState("");
   const [procedureName, setProcedureName] = useState("");
+  const [selectedProcedures, setSelectedProcedures] = useState<string[]>([]);
+  const [procedureCustom, setProcedureCustom] = useState("");
   const [pastHistory, setPastHistory] = useState("");
+
+  // Medical & Surgical History (Independent Fields - Multi-Select)
+  const [selectedMedicalConditions, setSelectedMedicalConditions] = useState<string[]>([]);
+  const [medicalConditionCustom, setMedicalConditionCustom] = useState<string>("");
+  const [surgicalHistory, setSurgicalHistory] = useState<string>("");
+
+  const MEDICAL_CONDITIONS = [
+    "مرض ارتفاع ضغط الدم",
+    "مرض السكري",
+    "امراض الجهاز التنفسي",
+    "امراض الجهاز الهضمي",
+    "السرطان",
+    "الروماتويدي",
+    "الصرع",
+    "أمراض الغدة",
+    "اخرى",
+  ];
+
+  function getEffectiveMedicalHistory(conditions: string[], custom: string) {
+    if (!conditions || conditions.length === 0) return "";
+    const list: string[] = [];
+    conditions.forEach((c) => {
+      if (c !== "اخرى") {
+        list.push(c);
+      }
+    });
+    if (conditions.includes("اخرى")) {
+      if (custom.trim()) {
+        list.push(custom.trim());
+      } else {
+        list.push("اخرى");
+      }
+    }
+    return list.join("، ");
+  }
+
+  function getCombinedHistory(conditions: string[], custom: string, surgical: string) {
+    const med = getEffectiveMedicalHistory(conditions, custom);
+    const surg = surgical.trim();
+    if (med && surg) {
+      return `التاريخ المرضي: ${med} | التاريخ الجراحي: ${surg}`;
+    } else if (med) {
+      return `التاريخ المرضي: ${med}`;
+    } else if (surg) {
+      return `التاريخ الجراحي: ${surg}`;
+    }
+    return "";
+  }
+
+  function parseMedicalConditions(rawMed: string) {
+    if (!rawMed) return { conditions: [] as string[], custom: "" };
+    const tokens = rawMed.split(/[,،|]/).map((t) => t.trim()).filter(Boolean);
+    const selected: string[] = [];
+    const customParts: string[] = [];
+
+    tokens.forEach((tok) => {
+      const match = MEDICAL_CONDITIONS.find(
+        (c) => c !== "اخرى" && (c.toLowerCase() === tok.toLowerCase() || c.includes(tok) || tok.includes(c))
+      );
+      if (match) {
+        if (!selected.includes(match)) selected.push(match);
+      } else {
+        customParts.push(tok);
+      }
+    });
+
+    if (customParts.length > 0) {
+      if (!selected.includes("اخرى")) selected.push("اخرى");
+    }
+
+    return { conditions: selected, custom: customParts.join("، ") };
+  }
+
+  function computeProcedureName(selected: string[], custom: string) {
+    const parts: string[] = [];
+    selected.forEach((p) => {
+      if (p !== "أخرى") {
+        parts.push(p);
+      }
+    });
+    if (selected.includes("أخرى")) {
+      if (custom.trim()) {
+        parts.push(custom.trim());
+      } else {
+        parts.push("أخرى");
+      }
+    }
+    return parts.join("، ");
+  }
+
+  function parseProcedureName(rawProc: string) {
+    if (!rawProc) return { selected: [] as string[], custom: "" };
+    const tokens = rawProc.split(/[,،+]/).map((t) => t.trim()).filter(Boolean);
+    const selected: string[] = [];
+    const customParts: string[] = [];
+
+    tokens.forEach((tok) => {
+      const match = ["X-Ray", "MRI", "CT", "Doppler", "Echo", "U/S"].find(
+        (opt) => opt.toLowerCase() === tok.toLowerCase()
+      );
+      if (match) {
+        if (!selected.includes(match)) selected.push(match);
+      } else {
+        customParts.push(tok);
+      }
+    });
+
+    if (customParts.length > 0) {
+      if (!selected.includes("أخرى")) selected.push("أخرى");
+    }
+
+    return { selected, custom: customParts.join("، ") };
+  }
 
   // Allergies & Smoking & Mobility
   const [allergyTypes, setAllergyTypes] = useState<string[]>([]);
@@ -173,25 +318,26 @@ function PatientAssessmentContent() {
     "تثقيف المريض و / أو ذويه حول الاجراءات المانعة للسقوط",
   ]);
   const [fallCareResponsible, setFallCareResponsible] = useState<string[]>(["الممرضة"]);
-  const [fallCareTimeFrame, setFallCareTimeFrame] = useState<string>("30 دقيقة");
+  const [fallCareTimeFrame, setFallCareTimeFrame] = useState<string>("5 دقائق");
   const [fallCareTimeFrameCustom, setFallCareTimeFrameCustom] = useState<string>("");
 
   // Doctor Care Plan (Image 1) - طبيب الأشعة / أخصائي الأشعة
   const [doctorCareInterventions, setDoctorCareInterventions] = useState<string[]>([]);
   const [doctorCareResponsible, setDoctorCareResponsible] = useState<string[]>(["أخصائي الأشعة"]);
-  const [doctorCareTimeFrame, setDoctorCareTimeFrame] = useState<string>("15 دقيقة");
+  const [doctorCareTimeFrame, setDoctorCareTimeFrame] = useState<string>("5 دقائق");
   const [doctorCareTimeFrameCustom, setDoctorCareTimeFrameCustom] = useState<string>("");
   const [doctorConfirmedAt, setDoctorConfirmedAt] = useState<string | null>(null);
 
   // Technician Care Plan (Image 2) - فني الأشعة
   const [techCareInterventions, setTechCareInterventions] = useState<string[]>([]);
   const [techCareResponsible, setTechCareResponsible] = useState<string[]>(["فني الأشعة"]);
-  const [techCareTimeFrame, setTechCareTimeFrame] = useState<string>("15 دقيقة");
+  const [techCareTimeFrame, setTechCareTimeFrame] = useState<string>("5 دقائق");
   const [techCareTimeFrameCustom, setTechCareTimeFrameCustom] = useState<string>("");
   const [techSignature, setTechSignature] = useState("");
   const [techConfirmedAt, setTechConfirmedAt] = useState<string | null>(null);
 
   // Labs
+  const [hasLabResults, setHasLabResults] = useState<"يوجد" | "لا يوجد">("لا يوجد");
   const [labGfr, setLabGfr] = useState<number | "">("");
   const [labBun, setLabBun] = useState<number | "">("");
   const [labPotassium, setLabPotassium] = useState<number | "">("");
@@ -210,23 +356,35 @@ function PatientAssessmentContent() {
   const [physicianSignature, setPhysicianSignature] = useState("");
 
   // Permissions & Completion State:
-  // If a role has already submitted, that part CANNOT be updated by anyone (including the admin).
-  // An admin or role can ONLY fill/continue an unsubmitted, missing role's part.
+  // Procedure-based completion requirements:
+  // Echo, U/S, Doppler => Radiologist completion only
+  // X-Ray, MRI, CT => Radiology Technician completion only
+  // Both groups chosen => Both Technician & Radiologist required
+  const { needsRadiologist, needsTechnician } = getRequiredAssessmentRoles(
+    procedureName,
+    selectedProcedures
+  );
+
   const hasNurseSubmitted = Boolean(editId && nurseSignature && nurseSignature.trim() && nurseSignature !== "-");
   const hasDoctorSubmitted = Boolean(
-    editId && physicianSignature && physicianSignature.trim() && physicianSignature !== "-" &&
-    (labCreatinine !== "" || labGfr !== "")
+    editId && physicianSignature && physicianSignature.trim() && physicianSignature !== "-"
   );
   const hasTechSubmitted = Boolean(editId && techSignature && techSignature.trim() && techSignature !== "-");
-  const isModelComplete = Boolean(editId && hasNurseSubmitted && hasDoctorSubmitted && hasTechSubmitted);
+
+  const isModelComplete = Boolean(
+    editId &&
+    hasNurseSubmitted &&
+    (!needsRadiologist || hasDoctorSubmitted) &&
+    (!needsTechnician || hasTechSubmitted)
+  );
 
   const canEditNurse = !hasNurseSubmitted && (isAdmin || role === "nurse");
-  const canEditRadiologist = !hasDoctorSubmitted && (isAdmin || role === "radiologist");
-  const canEditTech = !hasTechSubmitted && (isAdmin || role === "technician");
+  const canEditRadiologist = needsRadiologist && !hasDoctorSubmitted && (isAdmin || role === "radiologist");
+  const canEditTech = needsTechnician && !hasTechSubmitted && (isAdmin || role === "technician");
 
   const isNurseDisabled = isLocked || isModelComplete || hasNurseSubmitted || !canEditNurse;
-  const isTechDisabled = isLocked || isModelComplete || hasTechSubmitted || !canEditTech;
-  const isRadiologistDisabled = isLocked || isModelComplete || hasDoctorSubmitted || !canEditRadiologist;
+  const isTechDisabled = isLocked || isModelComplete || hasTechSubmitted || !canEditTech || !needsTechnician;
+  const isRadiologistDisabled = isLocked || isModelComplete || hasDoctorSubmitted || !canEditRadiologist || !needsRadiologist;
 
   // Auto-fill signatures according to user role for new records
   useEffect(() => {
@@ -253,6 +411,8 @@ function PatientAssessmentContent() {
     const nameParam = searchParams.get("name");
     const genderParam = searchParams.get("gender");
     const ageParam = searchParams.get("age");
+    const docParam = searchParams.get("doctor_name") || searchParams.get("attending_physician");
+    const docPhoneParam = searchParams.get("doctor_phone") || searchParams.get("physician_phone");
 
     if (id) {
       loadRecordForEdit(id);
@@ -264,6 +424,8 @@ function PatientAssessmentContent() {
         if (nameParam) setPatientName(nameParam);
         if (genderParam) setGender(genderParam as any);
         if (ageParam) setAge(Number(ageParam) || "");
+        if (docParam) setAttendingPhysician(docParam);
+        if (docPhoneParam) setPhysicianPhone(docPhoneParam);
       }
       if (canEditNurse) {
         searchPatientByMrn(mrnParam);
@@ -303,8 +465,43 @@ function PatientAssessmentContent() {
         setRespiratoryRate(data.respiratory_rate || "");
         setOxygenSaturation(data.oxygen_saturation || "");
         setDiagnosis(data.diagnosis || "");
-        setProcedureName(data.procedure_name || "");
-        setPastHistory(data.medical_surgical_history || "");
+        const loadedProc = data.procedure_name || "";
+        setProcedureName(loadedProc);
+        const parsedProc = parseProcedureName(loadedProc);
+        setSelectedProcedures(parsedProc.selected);
+        setProcedureCustom(parsedProc.custom);
+        const rawHistory = data.medical_surgical_history || "";
+        setPastHistory(rawHistory);
+        if (rawHistory.includes("التاريخ المرضي:") || rawHistory.includes("التاريخ الجراحي:")) {
+          let medPart = "";
+          let surgPart = "";
+          if (rawHistory.includes("التاريخ المرضي:")) {
+            const afterMed = rawHistory.split("التاريخ المرضي:")[1];
+            medPart = (afterMed.split("|")[0] || "").trim();
+          }
+          if (rawHistory.includes("التاريخ الجراحي:")) {
+            surgPart = (rawHistory.split("التاريخ الجراحي:")[1] || "").trim();
+          }
+          setSurgicalHistory(surgPart);
+          const parsedMed = parseMedicalConditions(medPart);
+          setSelectedMedicalConditions(parsedMed.conditions);
+          setMedicalConditionCustom(parsedMed.custom);
+        } else if (rawHistory) {
+          const parsedMed = parseMedicalConditions(rawHistory);
+          if (parsedMed.conditions.length > 0) {
+            setSelectedMedicalConditions(parsedMed.conditions);
+            setMedicalConditionCustom(parsedMed.custom);
+            setSurgicalHistory("");
+          } else {
+            setSurgicalHistory(rawHistory);
+            setSelectedMedicalConditions([]);
+            setMedicalConditionCustom("");
+          }
+        } else {
+          setSelectedMedicalConditions([]);
+          setMedicalConditionCustom("");
+          setSurgicalHistory("");
+        }
         setAllergyTypes(data.allergy_types || []);
         setAllergyDetails(data.allergy_details || "");
         setIsSmoker(data.is_smoker || false);
@@ -342,12 +539,14 @@ function PatientAssessmentContent() {
             if (Array.isArray(fallPlan.interventions)) setFallCareInterventions(fallPlan.interventions);
             if (Array.isArray(fallPlan.responsible)) setFallCareResponsible(fallPlan.responsible);
             if (fallPlan.time_frame) {
-              if (fallPlan.time_frame === "30 دقيقة") {
-                setFallCareTimeFrame("30 دقيقة");
+              if (fallPlan.time_frame === "5 دقائق" || fallPlan.time_frame === "30 دقيقة") {
+                setFallCareTimeFrame("5 دقائق");
               } else {
                 setFallCareTimeFrame("أخرى");
                 setFallCareTimeFrameCustom(fallPlan.time_frame);
               }
+            } else {
+              setFallCareTimeFrame("5 دقائق");
             }
           }
 
@@ -361,12 +560,14 @@ function PatientAssessmentContent() {
             if (Array.isArray(docPlan.interventions)) setDoctorCareInterventions(docPlan.interventions);
             if (Array.isArray(docPlan.responsible)) setDoctorCareResponsible(docPlan.responsible);
             if (docPlan.time_frame) {
-              if (docPlan.time_frame === "15 دقيقة") {
-                setDoctorCareTimeFrame("15 دقيقة");
+              if (docPlan.time_frame === "5 دقائق" || docPlan.time_frame === "15 دقيقة") {
+                setDoctorCareTimeFrame("5 دقائق");
               } else {
                 setDoctorCareTimeFrame("أخرى");
                 setDoctorCareTimeFrameCustom(docPlan.time_frame);
               }
+            } else {
+              setDoctorCareTimeFrame("5 دقائق");
             }
             if (docPlan.confirmed_at) setDoctorConfirmedAt(docPlan.confirmed_at);
           }
@@ -384,12 +585,14 @@ function PatientAssessmentContent() {
             if (Array.isArray(techPlan.interventions)) setTechCareInterventions(techPlan.interventions);
             if (Array.isArray(techPlan.responsible)) setTechCareResponsible(techPlan.responsible);
             if (techPlan.time_frame) {
-              if (techPlan.time_frame === "15 دقيقة") {
-                setTechCareTimeFrame("15 دقيقة");
+              if (techPlan.time_frame === "5 دقائق" || techPlan.time_frame === "15 دقيقة") {
+                setTechCareTimeFrame("5 دقائق");
               } else {
                 setTechCareTimeFrame("أخرى");
                 setTechCareTimeFrameCustom(techPlan.time_frame);
               }
+            } else {
+              setTechCareTimeFrame("5 دقائق");
             }
             if (techPlan.confirmed_by) {
               setTechSignature(techPlan.confirmed_by);
@@ -418,6 +621,10 @@ function PatientAssessmentContent() {
         if (data.tech_signature && data.tech_signature !== data.physician_signature) {
           setTechSignature(data.tech_signature);
         }
+        const hasAnyLab = Boolean(
+          data.lab_gfr || data.lab_bun || data.lab_potassium || data.lab_sodium || data.lab_urea || data.lab_creatinine
+        );
+        setHasLabResults(hasAnyLab ? "يوجد" : "لا يوجد");
         setLabGfr(data.lab_gfr || "");
         setLabBun(data.lab_bun || "");
         setLabPotassium(data.lab_potassium || "");
@@ -428,10 +635,11 @@ function PatientAssessmentContent() {
         if (data.medications && Array.isArray(data.medications)) setMedications(data.medications);
         setNurseSignature(data.nurse_signature || "");
         setPhysicianSignature(data.physician_signature || "");
+        const { needsRadiologist: reqDoc, needsTechnician: reqTech } = getRequiredAssessmentRoles(loadedProc);
         const hasNurse = Boolean(data.nurse_signature && data.nurse_signature !== "-");
-        const hasDoc = Boolean(data.physician_signature && data.physician_signature !== "-" && (data.lab_creatinine || data.lab_gfr));
+        const hasDoc = Boolean(data.physician_signature && data.physician_signature !== "-");
         const hasTech = Boolean(data.tech_signature && data.tech_signature !== "-");
-        const complete = hasNurse && hasDoc && hasTech;
+        const complete = hasNurse && (!reqDoc || hasDoc) && (!reqTech || hasTech);
         setIsLocked(complete);
       }
     } catch (err: any) {
@@ -458,7 +666,12 @@ function PatientAssessmentContent() {
     setOxygenSaturation("");
     setDiagnosis("");
     setProcedureName("");
+    setSelectedProcedures([]);
+    setProcedureCustom("");
     setPastHistory("");
+    setSelectedMedicalConditions([]);
+    setMedicalConditionCustom("");
+    setSurgicalHistory("");
     setAllergyTypes([]);
     setAllergyDetails("");
     setIsSmoker(null);
@@ -484,6 +697,7 @@ function PatientAssessmentContent() {
     setMentalDetails("");
     setAbuseSigns(false);
     setAbuseDetails("");
+    setHasLabResults("لا يوجد");
     setLabGfr("");
     setLabBun("");
     setLabPotassium("");
@@ -494,12 +708,12 @@ function PatientAssessmentContent() {
     setMedications([]);
     setDoctorCareInterventions([]);
     setDoctorCareResponsible(["أخصائي الأشعة"]);
-    setDoctorCareTimeFrame("15 دقيقة");
+    setDoctorCareTimeFrame("5 دقائق");
     setDoctorCareTimeFrameCustom("");
     setDoctorConfirmedAt(null);
     setTechCareInterventions([]);
     setTechCareResponsible(["فني الأشعة"]);
-    setTechCareTimeFrame("15 دقيقة");
+    setTechCareTimeFrame("5 دقائق");
     setTechCareTimeFrameCustom("");
     setTechSignature("");
     setTechConfirmedAt(null);
@@ -614,7 +828,8 @@ function PatientAssessmentContent() {
 
       if (patient) {
         setPatientId(patient.id);
-        setPatientName((prev) => prev || patient.full_name || "");
+        setMrn(patient.mrn || cleanMrn);
+        setPatientName(patient.full_name || "");
 
         let resolvedGender = normalizeGender(patient.gender);
         let resolvedAge = (patient.age !== null && patient.age !== undefined && patient.age !== "") ? patient.age : null;
@@ -643,12 +858,61 @@ function PatientAssessmentContent() {
           }
         }
 
-        if (resolvedGender) {
-          setGender((prev) => prev || resolvedGender);
+        setGender(resolvedGender || "");
+        setAge(resolvedAge !== null && resolvedAge !== undefined ? resolvedAge : "");
+
+        // Auto-fill attending physician and phone from patient record, previous assessments, or admission
+        let foundDoctor = patient.attending_physician || patient.doctor_name || "";
+        let foundPhone = patient.physician_phone || patient.doctor_phone || "";
+
+        if (!foundDoctor || !foundPhone) {
+          const [docAssessRes, docSubRes] = await Promise.all([
+            supabase
+              .from("patient_assessments")
+              .select("attending_physician, physician_phone")
+              .eq("patient_id", patient.id)
+              .not("attending_physician", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(1),
+            supabase
+              .from("form_submissions")
+              .select("data")
+              .eq("patient_id", patient.id)
+              .order("created_at", { ascending: false })
+              .limit(5),
+          ]);
+
+          if (latestSearchMrnRef.current !== thisSearch) return;
+
+          if (!foundDoctor) {
+            foundDoctor = docAssessRes.data?.[0]?.attending_physician || "";
+            if (!foundDoctor && docSubRes.data) {
+              for (const sub of docSubRes.data) {
+                const doc = sub.data?.attending_physician || sub.data?.doctor_name;
+                if (doc) {
+                  foundDoctor = doc;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (!foundPhone) {
+            foundPhone = docAssessRes.data?.[0]?.physician_phone || "";
+            if (!foundPhone && docSubRes.data) {
+              for (const sub of docSubRes.data) {
+                const ph = sub.data?.physician_phone || sub.data?.doctor_phone;
+                if (ph) {
+                  foundPhone = ph;
+                  break;
+                }
+              }
+            }
+          }
         }
-        if (resolvedAge !== null) {
-          setAge((prev) => (prev !== "" ? prev : resolvedAge));
-        }
+
+        setAttendingPhysician(foundDoctor || "");
+        setPhysicianPhone(foundPhone || "");
       } else {
         // No match found -> clear all auto-filled fields
         clearPatientFields();
@@ -697,7 +961,7 @@ function PatientAssessmentContent() {
         dose: "",
         route: "IV",
         frequency: "مرة واحدة",
-        ordering_doctor: attendingPhysician || "طبيب المركز",
+        ordering_doctor: "",
         administered_by: "التمريض",
       },
     ]);
@@ -713,15 +977,7 @@ function PatientAssessmentContent() {
       if (!procedureName.trim()) errors.procedureName = "اسم الإجراء مطلوب";
     }
 
-    // نتائج المعمل إلزامية لطبيب الأشعة (Radiologist)
-    if (role === "radiologist") {
-      if (labCreatinine === "" || isNaN(Number(labCreatinine))) errors.labCreatinine = "مطلوب";
-      if (labGfr === "" || isNaN(Number(labGfr))) errors.labGfr = "مطلوب";
-      if (labUrea === "" || isNaN(Number(labUrea))) errors.labUrea = "مطلوب";
-      if (labBun === "" || isNaN(Number(labBun))) errors.labBun = "مطلوب";
-      if (labSodium === "" || isNaN(Number(labSodium))) errors.labSodium = "مطلوب";
-      if (labPotassium === "" || isNaN(Number(labPotassium))) errors.labPotassium = "مطلوب";
-    }
+    // Lab results are un-mandatory per requirements
 
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -737,11 +993,7 @@ function PatientAssessmentContent() {
     }
 
     if (!validateForm()) {
-      if (role === "radiologist") {
-        setErrorMsg("يرجى إدخال جميع نتائج المعمل (Creatinine, GFR, Urea, BUN, Sodium, Potassium) الإجبارية لطبيب الأشعة.");
-      } else {
-        setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
-      }
+      setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
       setShakeTrigger((prev) => prev + 1);
       return;
     }
@@ -860,6 +1112,12 @@ function PatientAssessmentContent() {
         },
       ];
 
+      const effectiveCombinedHistory = getCombinedHistory(
+        selectedMedicalConditions,
+        medicalConditionCustom,
+        surgicalHistory
+      );
+
       const payloadData = {
         mrn,
         patient_name: patientName,
@@ -880,7 +1138,7 @@ function PatientAssessmentContent() {
         },
         diagnosis,
         procedure_name: procedureName,
-        medical_surgical_history: pastHistory,
+        medical_surgical_history: effectiveCombinedHistory || pastHistory,
         allergy_types: allergyTypes,
         allergy_details: allergyDetails,
         is_smoker: isSmoker,
@@ -945,7 +1203,7 @@ function PatientAssessmentContent() {
             oxygen_saturation: oxygenSaturation !== "" ? Number(oxygenSaturation) : null,
             diagnosis,
             procedure_name: procedureName,
-            medical_surgical_history: pastHistory,
+            medical_surgical_history: effectiveCombinedHistory || pastHistory,
             allergy_types: allergyTypes,
             allergy_details: allergyDetails,
             is_smoker: isSmoker,
@@ -1036,7 +1294,7 @@ function PatientAssessmentContent() {
             oxygen_saturation: oxygenSaturation !== "" ? Number(oxygenSaturation) : null,
             diagnosis,
             procedure_name: procedureName,
-            medical_surgical_history: pastHistory,
+            medical_surgical_history: effectiveCombinedHistory || pastHistory,
             allergy_types: allergyTypes,
             allergy_details: allergyDetails,
             is_smoker: isSmoker,
@@ -1152,15 +1410,15 @@ function PatientAssessmentContent() {
       "تثقيف المريض و / أو ذويه حول الاجراءات المانعة للسقوط",
     ]);
     setFallCareResponsible(["الممرضة"]);
-    setFallCareTimeFrame("30 دقيقة");
+    setFallCareTimeFrame("5 دقائق");
     setFallCareTimeFrameCustom("");
     setDoctorCareInterventions([]);
     setDoctorCareResponsible([]);
-    setDoctorCareTimeFrame("");
+    setDoctorCareTimeFrame("5 دقائق");
     setDoctorCareTimeFrameCustom("");
     setTechCareInterventions([]);
     setTechCareResponsible([]);
-    setTechCareTimeFrame("");
+    setTechCareTimeFrame("5 دقائق");
     setTechCareTimeFrameCustom("");
     setTechSignature("");
     setLabGfr("");
@@ -1302,7 +1560,13 @@ function PatientAssessmentContent() {
                       <input
                         type="text"
                         value={searchMrnInput}
-                        onChange={(e) => setSearchMrnInput(e.target.value)}
+                        onChange={(e) => {
+                          setSearchMrnInput(e.target.value);
+                          if (!e.target.value.trim()) {
+                            clearPatientFields();
+                            setSearchStatus(null);
+                          }
+                        }}
                         placeholder="رقم الملف الطبي..."
                         className="px-3 py-1.5 border border-sky-300 rounded-lg text-xs bg-white outline-none w-full sm:w-48 font-mono focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
                         onKeyDown={(e) => {
@@ -1402,10 +1666,18 @@ function PatientAssessmentContent() {
                   value={mrn}
                   onChange={(e) => {
                     setMrn(e.target.value);
-                    searchPatientByMrn(e.target.value);
+                    if (!e.target.value.trim()) {
+                      clearPatientFields();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchPatientByMrn(mrn);
+                    }
                   }}
                   placeholder="رقم الملف الطبي..."
-                  className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
+                  className={`w-full pl-24 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
                     isNurseDisabled
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
@@ -1413,7 +1685,15 @@ function PatientAssessmentContent() {
                       : "border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                   }`}
                 />
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <button
+                  type="button"
+                  disabled={isNurseDisabled}
+                  onClick={() => searchPatientByMrn(mrn)}
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#481454] hover:bg-[#380e42] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>بحث</span>
+                </button>
               </div>
               {fieldErrors.mrn && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.mrn}</p>
@@ -1677,25 +1957,120 @@ function PatientAssessmentContent() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                الإجراء المطلوب <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                disabled={isNurseDisabled}
-                value={procedureName}
-                onChange={(e) => setProcedureName(e.target.value)}
-                placeholder="مثال: أشعة مقطعية على المخ بالصبغة..."
-                className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm ${
-                  isNurseDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed"
-                    : fieldErrors.procedureName
-                    ? "border-rose-400 bg-rose-50/40"
-                    : "border-slate-300"
-                }`}
-              />
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <label className="block text-xs font-bold text-slate-700">
+                  الإجراء المطلوب <span className="text-rose-500">*</span>
+                  <span className="text-slate-400 font-normal mr-1.5">(يمكنك اختيار إجراء واحد أو أكثر)</span>
+                </label>
+                {selectedProcedures.length > 0 && (
+                  <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                    <span>تم تحديد ({selectedProcedures.length}):</span>
+                    <strong className="text-indigo-900">{procedureName || selectedProcedures.join("، ")}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                  {[
+                    { id: "X-Ray", label: "X-Ray" },
+                    { id: "MRI", label: "MRI" },
+                    { id: "CT", label: "CT" },
+                    { id: "Doppler", label: "Doppler" },
+                    { id: "Echo", label: "Echo" },
+                    { id: "U/S", label: "U/S" },
+                    { id: "أخرى", label: "أخرى" },
+                  ].map((item) => {
+                    const isSelected = selectedProcedures.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={isNurseDisabled}
+                        onClick={() => {
+                          let next: string[];
+                          if (isSelected) {
+                            next = selectedProcedures.filter((p) => p !== item.id);
+                          } else {
+                            next = [...selectedProcedures, item.id];
+                          }
+                          setSelectedProcedures(next);
+                          setProcedureName(computeProcedureName(next, procedureCustom));
+                        }}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
+                          isNurseDisabled
+                            ? isSelected
+                              ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-200"
+                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:border-slate-400"
+                        }`}
+                      >
+                        <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] ${
+                          isSelected ? "bg-white text-indigo-600 font-black" : "border border-slate-300"
+                        }`}>
+                          {isSelected ? "✓" : ""}
+                        </span>
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedProcedures.includes("أخرى") && (
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+                    <input
+                      type="text"
+                      disabled={isNurseDisabled}
+                      value={procedureCustom}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProcedureCustom(val);
+                        setProcedureName(computeProcedureName(selectedProcedures, val));
+                      }}
+                      placeholder="اكتب الإجراء المطلوب الإضافي هنا بالتفصيل..."
+                      className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
+                        isNurseDisabled
+                          ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                          : fieldErrors.procedureName
+                          ? "border-rose-400 bg-rose-50/40"
+                          : "border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white"
+                      }`}
+                      autoFocus
+                    />
+                  </div>
+                )}
+
+                {selectedProcedures.length > 0 && (
+                  <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all ${
+                    needsRadiologist && needsTechnician
+                      ? "bg-purple-50/80 border-purple-200 text-purple-950"
+                      : needsRadiologist
+                      ? "bg-emerald-50/80 border-emerald-200 text-emerald-950"
+                      : "bg-teal-50/80 border-teal-200 text-teal-950"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold">المسؤول عن استكمال واعتماد هذا النموذج:</span>
+                      <span className="font-extrabold underline decoration-2">
+                        {needsRadiologist && needsTechnician
+                          ? "فني الأشعة + طبيب الأشعة (مطلوب اعتماد الطرفين)"
+                          : needsRadiologist
+                          ? "طبيب الأشعة فقط (أخصائي الأشعة)"
+                          : "فني الأشعة فقط"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-white/80 border border-current">
+                      {needsRadiologist && needsTechnician ? "مزدوج (فني + طبيب)" : needsRadiologist ? "طبيب الأشعة" : "فني الأشعة"}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {fieldErrors.procedureName && (
+                <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureName}</p>
+              )}
             </div>
 
             <div>
@@ -1713,18 +2088,110 @@ function PatientAssessmentContent() {
             </div>
           </div>
 
+          {/* حقل مستقل: التاريخ المرضي (Medical History - Multi-Select) */}
+          <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <label className="block text-xs font-bold text-slate-800">
+                  التاريخ المرضي (Past Medical History)
+                </label>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  (يمكنك اختيار مرض واحد أو أكثر)
+                </span>
+              </div>
+              {selectedMedicalConditions.length > 0 && (
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                  <span>تم التحديد ({selectedMedicalConditions.length}):</span>
+                  <span className="text-indigo-950 font-black">
+                    {getEffectiveMedicalHistory(selectedMedicalConditions, medicalConditionCustom)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+              {MEDICAL_CONDITIONS.map((cond) => {
+                const isSelected = selectedMedicalConditions.includes(cond);
+                return (
+                  <button
+                    key={cond}
+                    type="button"
+                    disabled={isNurseDisabled}
+                    onClick={() => {
+                      let next: string[];
+                      if (isSelected) {
+                        next = selectedMedicalConditions.filter((c) => c !== cond);
+                      } else {
+                        next = [...selectedMedicalConditions, cond];
+                      }
+                      setSelectedMedicalConditions(next);
+                      setPastHistory(getCombinedHistory(next, medicalConditionCustom, surgicalHistory));
+                    }}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border select-none cursor-pointer ${
+                      isNurseDisabled
+                        ? isSelected
+                          ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                          : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                        : isSelected
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-200"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <span
+                      className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] shrink-0 ${
+                        isSelected ? "bg-white text-indigo-600 font-black" : "border border-slate-300"
+                      }`}
+                    >
+                      {isSelected ? "✓" : ""}
+                    </span>
+                    <span className="text-center">{cond}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedMedicalConditions.includes("اخرى") && (
+              <div className="animate-in fade-in slide-in-from-top-1 duration-150 pt-1">
+                <input
+                  type="text"
+                  disabled={isNurseDisabled}
+                  value={medicalConditionCustom}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMedicalConditionCustom(val);
+                    setPastHistory(getCombinedHistory(selectedMedicalConditions, val, surgicalHistory));
+                  }}
+                  placeholder="اكتب المرض أو التاريخ المرضي الآخر بالتفصيل..."
+                  className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm bg-white transition-all ${
+                    isNurseDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  }`}
+                  autoFocus
+                />
+              </div>
+            )}
+          </div>
+
+          {/* حقل مستقل: التاريخ الجراحي (Surgical History) */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              التاريخ المرضي والجراحي (Past medical & surgical history)
+              التاريخ الجراحي (Past Surgical History)
+              <span className="text-slate-400 font-normal mr-1.5">(اكتب العمليات والتدخلات الجراحية السابقة وتواريخها إن وجدت)</span>
             </label>
             <textarea
               rows={2}
               disabled={isNurseDisabled}
-              value={pastHistory}
-              onChange={(e) => setPastHistory(e.target.value)}
-              placeholder="العمليات السابقة والأمراض المزمنة..."
-              className={`w-full px-3.5 py-2 border border-slate-300 rounded-xl text-xs outline-none ${
-                isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : ""
+              value={surgicalHistory}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSurgicalHistory(val);
+                setPastHistory(getCombinedHistory(selectedMedicalConditions, medicalConditionCustom, val));
+              }}
+              placeholder="اكتب العمليات الجراحية السابقة وتواريخها هنا..."
+              className={`w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs sm:text-sm outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 ${
+                isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
               }`}
             />
           </div>
@@ -2423,195 +2890,213 @@ function PatientAssessmentContent() {
             <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border flex items-center gap-1 ${
               isRadiologistDisabled
                 ? "bg-slate-200 text-slate-600 border-slate-300"
-                : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                : "bg-purple-50 text-purple-800 border-purple-200"
             }`}>
               {isRadiologistDisabled && <Lock className="w-3 h-3" />}
-              <span>{isRadiologistDisabled ? "غير متاح لدورك (خاص بأخصائي الأشعة)" : "خاص بأخصائي الأشعة (Radiologist) — إجباري *"}</span>
+              <span>{isRadiologistDisabled ? "غير متاح لدورك (خاص بأخصائي الأشعة)" : "خاص بأخصائي الأشعة (Radiologist) — اختياري"}</span>
             </span>
           </div>
 
-          {!canEditRadiologist ? (
+          {!canEditRadiologist && (
             <p className="text-[11px] text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200">
               ℹ️ نتائج التحاليل المعملية مخصصة لإدخال أخصائي الأشعة أو المسؤول (للقراءة فقط لدورك الحالي).
             </p>
-          ) : (
-            <p className="text-[11px] text-emerald-800 bg-emerald-50/90 p-2.5 rounded-lg border border-emerald-200 font-medium flex items-center gap-1.5">
-              <span>⚠️</span>
-              <span><strong>تنبيه لطبيب الأشعة:</strong> جميع حقول نتائج المعمل الستة أدناه إلزامية لتأكيد واعتماد التقييم بنجاح.</span>
-            </p>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs">
+          {/* Toggle: يوجد / لا يوجد */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                Creatinine {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                disabled={isRadiologistDisabled}
-                value={labCreatinine}
-                onChange={(e) => {
-                  setLabCreatinine(e.target.value ? Number(e.target.value) : "");
-                  if (fieldErrors.labCreatinine) {
-                    setFieldErrors((prev) => ({ ...prev, labCreatinine: "" }));
-                  }
-                }}
-                placeholder="0.9"
-                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
-                  isRadiologistDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
-                    : fieldErrors.labCreatinine
-                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
-                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-                }`}
-              />
-              {fieldErrors.labCreatinine && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labCreatinine}</p>
-              )}
+              <span className="text-xs font-bold text-slate-700 block">هل تتوفر نتائج تحاليل معملية للمريض؟</span>
+              <span className="text-[11px] text-slate-400">حدد (يوجد) لإدخال نتائج التحاليل أدناه أو (لا يوجد) للمتابعة بدونها</span>
             </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                GFR {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
-              </label>
-              <input
-                type="number"
-                disabled={isRadiologistDisabled}
-                value={labGfr}
-                onChange={(e) => {
-                  setLabGfr(e.target.value ? Number(e.target.value) : "");
-                  if (fieldErrors.labGfr) {
-                    setFieldErrors((prev) => ({ ...prev, labGfr: "" }));
-                  }
-                }}
-                placeholder="90"
-                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
-                  isRadiologistDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
-                    : fieldErrors.labGfr
-                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
-                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-                }`}
-              />
-              {fieldErrors.labGfr && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labGfr}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                Urea {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
-              </label>
-              <input
-                type="number"
-                disabled={isRadiologistDisabled}
-                value={labUrea}
-                onChange={(e) => {
-                  setLabUrea(e.target.value ? Number(e.target.value) : "");
-                  if (fieldErrors.labUrea) {
-                    setFieldErrors((prev) => ({ ...prev, labUrea: "" }));
-                  }
-                }}
-                placeholder="30"
-                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
-                  isRadiologistDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
-                    : fieldErrors.labUrea
-                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
-                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-                }`}
-              />
-              {fieldErrors.labUrea && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labUrea}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                BUN {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
-              </label>
-              <input
-                type="number"
-                disabled={isRadiologistDisabled}
-                value={labBun}
-                onChange={(e) => {
-                  setLabBun(e.target.value ? Number(e.target.value) : "");
-                  if (fieldErrors.labBun) {
-                    setFieldErrors((prev) => ({ ...prev, labBun: "" }));
-                  }
-                }}
-                placeholder="15"
-                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
-                  isRadiologistDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
-                    : fieldErrors.labBun
-                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
-                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-                }`}
-              />
-              {fieldErrors.labBun && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labBun}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                Sodium (Na+) {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
-              </label>
-              <input
-                type="number"
-                disabled={isRadiologistDisabled}
-                value={labSodium}
-                onChange={(e) => {
-                  setLabSodium(e.target.value ? Number(e.target.value) : "");
-                  if (fieldErrors.labSodium) {
-                    setFieldErrors((prev) => ({ ...prev, labSodium: "" }));
-                  }
-                }}
-                placeholder="140"
-                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
-                  isRadiologistDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
-                    : fieldErrors.labSodium
-                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
-                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-                }`}
-              />
-              {fieldErrors.labSodium && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labSodium}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                Potassium (K+) {canEditRadiologist && <span className="text-rose-500 font-extrabold">*</span>}
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                disabled={isRadiologistDisabled}
-                value={labPotassium}
-                onChange={(e) => {
-                  setLabPotassium(e.target.value ? Number(e.target.value) : "");
-                  if (fieldErrors.labPotassium) {
-                    setFieldErrors((prev) => ({ ...prev, labPotassium: "" }));
-                  }
-                }}
-                placeholder="4.0"
-                className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
-                  isRadiologistDisabled
-                    ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
-                    : fieldErrors.labPotassium
-                    ? "border-rose-400 bg-rose-50/50 ring-1 ring-rose-300"
-                    : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
-                }`}
-              />
-              {fieldErrors.labPotassium && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1 text-center">{fieldErrors.labPotassium}</p>
-              )}
+            <div className="flex items-center gap-2">
+              {(["لا يوجد", "يوجد"] as const).map((opt) => {
+                const isSelected = hasLabResults === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    disabled={isRadiologistDisabled}
+                    onClick={() => {
+                      setHasLabResults(opt);
+                      if (opt === "لا يوجد") {
+                        setLabCreatinine("");
+                        setLabGfr("");
+                        setLabUrea("");
+                        setLabBun("");
+                        setLabSodium("");
+                        setLabPotassium("");
+                        setFieldErrors((prev) => {
+                          const c = { ...prev };
+                          delete c.labCreatinine;
+                          delete c.labGfr;
+                          delete c.labUrea;
+                          delete c.labBun;
+                          delete c.labSodium;
+                          delete c.labPotassium;
+                          return c;
+                        });
+                      }
+                    }}
+                    className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      isSelected
+                        ? opt === "يوجد"
+                          ? "bg-purple-900 text-white border-purple-900 shadow-xs"
+                          : "bg-slate-700 text-white border-slate-700 shadow-xs"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                    } ${isRadiologistDisabled ? "cursor-not-allowed opacity-80" : ""}`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {/* Conditional Lab Results Fields */}
+          {hasLabResults === "يوجد" && (
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs pt-1 animate-in fade-in duration-200">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Creatinine
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  disabled={isRadiologistDisabled}
+                  value={labCreatinine}
+                  onChange={(e) => {
+                    setLabCreatinine(e.target.value ? Number(e.target.value) : "");
+                    if (fieldErrors.labCreatinine) {
+                      setFieldErrors((prev) => ({ ...prev, labCreatinine: "" }));
+                    }
+                  }}
+                  placeholder="0.9"
+                  className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                    isRadiologistDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  GFR
+                </label>
+                <input
+                  type="number"
+                  disabled={isRadiologistDisabled}
+                  value={labGfr}
+                  onChange={(e) => {
+                    setLabGfr(e.target.value ? Number(e.target.value) : "");
+                    if (fieldErrors.labGfr) {
+                      setFieldErrors((prev) => ({ ...prev, labGfr: "" }));
+                    }
+                  }}
+                  placeholder="90"
+                  className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                    isRadiologistDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Urea
+                </label>
+                <input
+                  type="number"
+                  disabled={isRadiologistDisabled}
+                  value={labUrea}
+                  onChange={(e) => {
+                    setLabUrea(e.target.value ? Number(e.target.value) : "");
+                    if (fieldErrors.labUrea) {
+                      setFieldErrors((prev) => ({ ...prev, labUrea: "" }));
+                    }
+                  }}
+                  placeholder="30"
+                  className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                    isRadiologistDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  BUN
+                </label>
+                <input
+                  type="number"
+                  disabled={isRadiologistDisabled}
+                  value={labBun}
+                  onChange={(e) => {
+                    setLabBun(e.target.value ? Number(e.target.value) : "");
+                    if (fieldErrors.labBun) {
+                      setFieldErrors((prev) => ({ ...prev, labBun: "" }));
+                    }
+                  }}
+                  placeholder="15"
+                  className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                    isRadiologistDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Sodium (Na+)
+                </label>
+                <input
+                  type="number"
+                  disabled={isRadiologistDisabled}
+                  value={labSodium}
+                  onChange={(e) => {
+                    setLabSodium(e.target.value ? Number(e.target.value) : "");
+                    if (fieldErrors.labSodium) {
+                      setFieldErrors((prev) => ({ ...prev, labSodium: "" }));
+                    }
+                  }}
+                  placeholder="140"
+                  className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                    isRadiologistDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Potassium (K+)
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  disabled={isRadiologistDisabled}
+                  value={labPotassium}
+                  onChange={(e) => {
+                    setLabPotassium(e.target.value ? Number(e.target.value) : "");
+                    if (fieldErrors.labPotassium) {
+                      setFieldErrors((prev) => ({ ...prev, labPotassium: "" }));
+                    }
+                  }}
+                  placeholder="4.0"
+                  className={`w-full px-2.5 py-1.5 border rounded-lg font-mono text-center transition-all ${
+                    isRadiologistDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200"
+                  }`}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* SECTION 8: Plan of Care (خطة الرعاية) */}
@@ -2730,11 +3215,11 @@ function PatientAssessmentContent() {
                           type="radio"
                           name="fallTimeFrame"
                           disabled={isNurseDisabled}
-                          checked={fallCareTimeFrame === "30 دقيقة"}
-                          onChange={() => setFallCareTimeFrame("30 دقيقة")}
+                          checked={fallCareTimeFrame === "5 دقائق"}
+                          onChange={() => setFallCareTimeFrame("5 دقائق")}
                           className={isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-teal-600"}
                         />
-                        <span>30 دقيقة</span>
+                        <span>5 دقائق</span>
                       </label>
 
                       <label className={`flex items-center gap-1.5 ${isNurseDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
@@ -2781,16 +3266,33 @@ function PatientAssessmentContent() {
                 <span>خطة الرعاية 2: المريض يحتاج للخضوع للتصوير التشخيصي (مسؤولية طبيب الأشعة)</span>
                 <div className="flex items-center gap-1.5">
                   <span className={`text-[10px] px-2 py-0.5 rounded font-bold flex items-center gap-1 ${
-                    isRadiologistDisabled ? "bg-slate-700 text-slate-200" : "bg-emerald-100 text-emerald-950"
+                    !needsRadiologist
+                      ? "bg-slate-200 text-slate-700"
+                      : isRadiologistDisabled
+                      ? "bg-slate-700 text-slate-200"
+                      : "bg-emerald-100 text-emerald-950"
                   }`}>
-                    {isRadiologistDisabled && <Lock className="w-3 h-3" />}
-                    <span>{isRadiologistDisabled ? "مسؤولية طبيب الأشعة (غير متاح لدورك)" : "مسؤولية طبيب الأشعة"}</span>
+                    {(!needsRadiologist || isRadiologistDisabled) && <Lock className="w-3 h-3" />}
+                    <span>
+                      {!needsRadiologist
+                        ? "غير مطلوب لهذا الفحص (خاص بالفني)"
+                        : isRadiologistDisabled
+                        ? "مسؤولية طبيب الأشعة (غير متاح لدورك)"
+                        : "مسؤولية طبيب الأشعة"}
+                    </span>
                   </span>
                   <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded font-mono">Doctor Care Plan</span>
                 </div>
               </div>
 
-              {physicianSignature ? (
+              {!needsRadiologist ? (
+                <div className="mx-3.5 mt-3 p-3 bg-slate-100/90 border border-slate-200 rounded-xl text-slate-700 text-xs flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0"></span>
+                  <span className="font-semibold">
+                    خطة رعاية طبيب الأشعة غير مطلوبة لهذا الفحص ({procedureName || "المحدد"}). الفحص المختار (X-Ray / MRI / CT) يخضع لإجراءات واعتماد فني الأشعة فقط.
+                  </span>
+                </div>
+              ) : physicianSignature ? (
                 <div className="mx-3.5 mt-3 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs font-bold flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -2842,7 +3344,7 @@ function PatientAssessmentContent() {
                             "تعريف المريض بفوائد ومخاطر وبدائل الاجراء",
                           ]);
                           setDoctorCareResponsible(["أخصائي الأشعة"]);
-                          setDoctorCareTimeFrame("15 دقيقة");
+                          setDoctorCareTimeFrame("5 دقائق");
                         }}
                         className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                       >
@@ -2914,11 +3416,11 @@ function PatientAssessmentContent() {
                           type="radio"
                           name="doctorTimeFrame"
                           disabled={isRadiologistDisabled}
-                          checked={doctorCareTimeFrame === "15 دقيقة"}
-                          onChange={() => setDoctorCareTimeFrame("15 دقيقة")}
+                          checked={doctorCareTimeFrame === "5 دقائق"}
+                          onChange={() => setDoctorCareTimeFrame("5 دقائق")}
                           className={isRadiologistDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-emerald-600"}
                         />
-                        <span>15 دقيقة</span>
+                        <span>5 دقائق</span>
                       </label>
 
                       <label className={`flex items-center gap-1.5 ${isRadiologistDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
@@ -2965,16 +3467,33 @@ function PatientAssessmentContent() {
                 <span>خطة الرعاية 3: إجراءات السلامة والجرعة الإشعاعية (مسؤولية فني الأشعة)</span>
                 <div className="flex items-center gap-1.5">
                   <span className={`text-[10px] px-2 py-0.5 rounded font-bold flex items-center gap-1 ${
-                    isTechDisabled ? "bg-slate-700 text-slate-200" : "bg-amber-100 text-amber-950"
+                    !needsTechnician
+                      ? "bg-slate-200 text-slate-700"
+                      : isTechDisabled
+                      ? "bg-slate-700 text-slate-200"
+                      : "bg-amber-100 text-amber-950"
                   }`}>
-                    {isTechDisabled && <Lock className="w-3 h-3" />}
-                    <span>{isTechDisabled ? "مسؤولية فني الأشعة (غير متاح لدورك)" : "مسؤولية فني الأشعة"}</span>
+                    {(!needsTechnician || isTechDisabled) && <Lock className="w-3 h-3" />}
+                    <span>
+                      {!needsTechnician
+                        ? "غير مطلوب لهذا الفحص (خاص بالطبيب)"
+                        : isTechDisabled
+                        ? "مسؤولية فني الأشعة (غير متاح لدورك)"
+                        : "مسؤولية فني الأشعة"}
+                    </span>
                   </span>
                   <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded font-mono">Radiation & Safety Plan</span>
                 </div>
               </div>
 
-              {techSignature ? (
+              {!needsTechnician ? (
+                <div className="mx-3.5 mt-3 p-3 bg-slate-100/90 border border-slate-200 rounded-xl text-slate-700 text-xs flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0"></span>
+                  <span className="font-semibold">
+                    خطة رعاية فني الأشعة غير مطلوبة لهذا الفحص ({procedureName || "المحدد"}). الفحص المختار (Echo / U/S / Doppler) يخضع لإجراءات واعتماد طبيب الأشعة فقط.
+                  </span>
+                </div>
+              ) : techSignature ? (
                 <div className="mx-3.5 mt-3 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs font-bold flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -3030,7 +3549,7 @@ function PatientAssessmentContent() {
                             "تثقيف المريض علي تعليمات ما بعد الفحص",
                           ]);
                           setTechCareResponsible(["فني الأشعة"]);
-                          setTechCareTimeFrame("15 دقيقة");
+                          setTechCareTimeFrame("5 دقائق");
                         }}
                         className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
                       >
@@ -3106,11 +3625,11 @@ function PatientAssessmentContent() {
                           type="radio"
                           name="techTimeFrame"
                           disabled={isTechDisabled}
-                          checked={techCareTimeFrame === "15 دقيقة"}
-                          onChange={() => setTechCareTimeFrame("15 دقيقة")}
+                          checked={techCareTimeFrame === "5 دقائق"}
+                          onChange={() => setTechCareTimeFrame("5 دقائق")}
                           className={isTechDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-indigo-600"}
                         />
-                        <span>15 دقيقة</span>
+                        <span>5 دقائق</span>
                       </label>
 
                       <label className={`flex items-center gap-1.5 ${isTechDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
@@ -3359,7 +3878,8 @@ function PatientAssessmentContent() {
                             arr[idx].time = e.target.value;
                             setMedications(arr);
                           }}
-                          className={`w-16 px-2 py-1 border rounded text-xs font-mono ${
+                          placeholder="الوقت..."
+                          className={`w-20 px-2 py-1 border rounded text-xs font-mono ${
                             isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
                           }`}
                         />
@@ -3375,7 +3895,7 @@ function PatientAssessmentContent() {
                             setMedications(arr);
                           }}
                           placeholder="اسم الدواء..."
-                          className={`w-full px-2 py-1 border rounded text-xs ${
+                          className={`w-full min-w-[130px] px-2 py-1 border rounded text-xs ${
                             isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
                           }`}
                         />
@@ -3406,7 +3926,8 @@ function PatientAssessmentContent() {
                             arr[idx].route = e.target.value;
                             setMedications(arr);
                           }}
-                          className={`w-16 px-2 py-1 border rounded text-xs ${
+                          placeholder="طريقة الإعطاء..."
+                          className={`w-24 px-2 py-1 border rounded text-xs ${
                             isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
                           }`}
                         />
@@ -3437,7 +3958,8 @@ function PatientAssessmentContent() {
                             arr[idx].ordering_doctor = e.target.value;
                             setMedications(arr);
                           }}
-                          className={`w-24 px-2 py-1 border rounded text-xs ${
+                          placeholder="توقيع الطبيب..."
+                          className={`w-28 px-2 py-1 border rounded text-xs ${
                             isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
                           }`}
                         />
@@ -3452,7 +3974,8 @@ function PatientAssessmentContent() {
                             arr[idx].administered_by = e.target.value;
                             setMedications(arr);
                           }}
-                          className={`w-24 px-2 py-1 border rounded text-xs ${
+                          placeholder="القائم بالإعطاء..."
+                          className={`w-28 px-2 py-1 border rounded text-xs ${
                             isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
                           }`}
                         />
@@ -3518,60 +4041,118 @@ function PatientAssessmentContent() {
             </div>
 
             {/* Technician Signature Display */}
-            <div className="p-3.5 rounded-xl border border-teal-100 bg-teal-50/30 space-y-2">
+            <div className={`p-3.5 rounded-xl border space-y-2 ${
+              !needsTechnician ? "border-slate-200 bg-slate-50/60 opacity-80" : "border-teal-100 bg-teal-50/30"
+            }`}>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-teal-950 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${!needsTechnician ? "text-slate-400" : "text-teal-600"}`} />
                   <span>توثيق واعتماد فني الأشعة</span>
                 </span>
-                <span className="text-[10px] bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-bold">
-                  فني الأشعة
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  !needsTechnician ? "bg-slate-200 text-slate-600" : "bg-teal-100 text-teal-800"
+                }`}>
+                  {!needsTechnician ? "معفى (غير مطلوب)" : "فني الأشعة"}
                 </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-teal-200/80 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-slate-800 font-mono">
-                    {techSignature || (role === "technician" ? profile?.full_name || "جاري التوثيق..." : "في انتظار توثيق الفني")}
+                    {!needsTechnician
+                      ? "غير مطلوب لهذا الفحص"
+                      : techSignature || (role === "technician" ? profile?.full_name || "جاري التوثيق..." : "في انتظار توثيق الفني")}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">
-                    {techSignature || (role === "technician" && profile?.full_name) ? "تم التوثيق إلكترونياً بنجاح" : "لم يتم التوثيق بعد"}
+                    {!needsTechnician
+                      ? "فحص سونار / إيكو / دوبلر يكتمل بواسطة الطبيب"
+                      : techSignature || (role === "technician" && profile?.full_name) ? "تم التوثيق إلكترونياً بنجاح" : "لم يتم التوثيق بعد"}
                   </div>
                 </div>
-                {(techSignature || (role === "technician" && profile?.full_name)) && (
+                {!needsTechnician ? (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                    غير مطلوب
+                  </span>
+                ) : (techSignature || (role === "technician" && profile?.full_name)) ? (
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>معتمد</span>
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
 
             {/* Radiologist Signature Display */}
-            <div className="p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/30 space-y-2">
+            <div className={`p-3.5 rounded-xl border space-y-2 ${
+              !needsRadiologist ? "border-slate-200 bg-slate-50/60 opacity-80" : "border-emerald-100 bg-emerald-50/30"
+            }`}>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${!needsRadiologist ? "text-slate-400" : "text-emerald-600"}`} />
                   <span>توثيق واعتماد طبيب الأشعة</span>
                 </span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                  أخصائي الأشعة
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  !needsRadiologist ? "bg-slate-200 text-slate-600" : "bg-emerald-100 text-emerald-800"
+                }`}>
+                  {!needsRadiologist ? "معفى (غير مطلوب)" : "أخصائي الأشعة"}
                 </span>
               </div>
               <div className="bg-white p-2.5 rounded-lg border border-emerald-200/80 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-slate-800 font-mono">
-                    {physicianSignature || (canEditRadiologist ? profile?.full_name || "جاري التوثيق..." : "في انتظار توثيق الطبيب")}
+                    {!needsRadiologist
+                      ? "غير مطلوب لهذا الفحص"
+                      : physicianSignature || (canEditRadiologist ? profile?.full_name || "جاري التوثيق..." : "في انتظار توثيق الطبيب")}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">
-                    {physicianSignature || (canEditRadiologist && profile?.full_name) ? "تم التوثيق إلكترونياً بنجاح" : "لم يتم التوثيق بعد"}
+                    {!needsRadiologist
+                      ? "فحص أشعة / رنين / مقطعية يكتمل بواسطة الفني"
+                      : physicianSignature || (canEditRadiologist && profile?.full_name) ? "تم التوثيق إلكترونياً بنجاح" : "لم يتم التوثيق بعد"}
                   </div>
                 </div>
-                {(physicianSignature || (canEditRadiologist && profile?.full_name)) && (
+                {!needsRadiologist ? (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                    غير مطلوب
+                  </span>
+                ) : (physicianSignature || (canEditRadiologist && profile?.full_name)) ? (
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>معتمد</span>
                   </span>
-                )}
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* Read-only Visit Date and Time display */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                تاريخ التقييم والزيارة <span className="text-slate-400 font-normal">(آلي)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  readOnly
+                  disabled
+                  value={visitDate}
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
+                />
+                <Calendar className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                وقت التقييم والزيارة <span className="text-slate-400 font-normal">(آلي)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={visitTime ? formatTime12(visitTime) : ""}
+                  className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-xl outline-none text-xs sm:text-sm font-mono font-bold bg-slate-100/90 text-slate-700 cursor-not-allowed select-none"
+                />
+                <Clock className="w-4 h-4 absolute left-3 top-3 text-slate-400 pointer-events-none" />
               </div>
             </div>
           </div>
@@ -3893,7 +4474,7 @@ function PatientAssessmentContent() {
                     <div>{fallCareResponsible.includes("الممرضة") ? "☒" : "☐"} الممرضة</div>
                   </td>
                   <td className="border border-black p-2 align-top text-center">
-                    <div>{fallCareTimeFrame === "30 دقيقة" ? "☒" : "☐"} 30 دقيقة</div>
+                    <div>{fallCareTimeFrame === "5 دقائق" ? "☒" : "☐"} 5 دقائق</div>
                     <div>{fallCareTimeFrame === "أخرى" ? `☒ أخرى: ${fallCareTimeFrameCustom}` : "☐ أخرى"}</div>
                   </td>
                 </tr>
@@ -3945,7 +4526,7 @@ function PatientAssessmentContent() {
                   <div>{doctorCareResponsible.includes("أخصائي الأشعة") ? "☒" : "☐"} أخصائي الأشعة</div>
                 </td>
                 <td className="border border-black p-2 align-top text-center">
-                  <div>{doctorCareTimeFrame === "15 دقيقة" ? "☒" : "☐"} 15 دقيقة</div>
+                  <div>{doctorCareTimeFrame === "5 دقائق" ? "☒" : "☐"} 5 دقائق</div>
                   <div>{doctorCareTimeFrame === "أخرى" ? `☒ أخرى: ${doctorCareTimeFrameCustom}` : "☐ أخرى"}</div>
                 </td>
               </tr>
@@ -3969,7 +4550,7 @@ function PatientAssessmentContent() {
                   <div>{techCareResponsible.includes("فني الأشعة") ? "☒" : "☐"} فني الأشعة</div>
                 </td>
                 <td className="border border-black p-2 align-top text-center">
-                  <div>{techCareTimeFrame === "15 دقيقة" ? "☒" : "☐"} 15 دقيقة</div>
+                  <div>{techCareTimeFrame === "5 دقائق" ? "☒" : "☐"} 5 دقائق</div>
                   <div>{techCareTimeFrame === "أخرى" ? `☒ أخرى: ${techCareTimeFrameCustom}` : "☐ أخرى"}</div>
                 </td>
               </tr>

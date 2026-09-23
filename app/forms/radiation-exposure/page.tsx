@@ -13,6 +13,7 @@ import {
   PlusCircle,
   Pencil,
   UserCheck,
+  ChevronDown,
 } from "lucide-react";
 import { getCurrentTimeShort, getCurrentDate, formatTime12 } from "@/lib/timeUtils";
 import FormSubmitButton from "@/components/FormSubmitButton";
@@ -65,7 +66,110 @@ function RadiationExposureContent() {
   const [weightKg, setWeightKg] = useState<number | "">("");
   const [age, setAge] = useState<number | "">("");
   const [procedureName, setProcedureName] = useState("");
+  const [selectedProcedures, setSelectedProcedures] = useState<string[]>([]);
+  const [procedureCustom, setProcedureCustom] = useState("");
   const [procedureLocation, setProcedureLocation] = useState("");
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [locationCustom, setLocationCustom] = useState("");
+
+  const PROCEDURE_LOCATIONS = [
+    "المخ",
+    "الفقرات العنقيه",
+    "الفقرات القطنيه",
+    "الصدر",
+    "البطن",
+    "البطن والحوض",
+    "الركبه",
+    "الكتف",
+    "اوردة وشرايين الطرفين",
+    "الغده",
+    "الرقبه",
+    "علي المسالك البوليه",
+    "اورده وشرايين الطرف السفلي",
+    "اخرى",
+  ];
+
+  function computeProcedureLocation(selected: string[], custom: string) {
+    const parts: string[] = [];
+    selected.forEach((loc) => {
+      if (loc !== "اخرى") {
+        parts.push(loc);
+      }
+    });
+    if (selected.includes("اخرى")) {
+      if (custom.trim()) {
+        parts.push(custom.trim());
+      } else {
+        parts.push("اخرى");
+      }
+    }
+    return parts.join("، ");
+  }
+
+  function parseProcedureLocation(rawLoc: string) {
+    if (!rawLoc) return { selected: [] as string[], custom: "" };
+    const tokens = rawLoc.split(/[,،+]/).map((t) => t.trim()).filter(Boolean);
+    const selected: string[] = [];
+    const customParts: string[] = [];
+
+    tokens.forEach((tok) => {
+      const match = PROCEDURE_LOCATIONS.find(
+        (opt) => opt !== "اخرى" && (opt.toLowerCase() === tok.toLowerCase() || opt === tok)
+      );
+      if (match) {
+        if (!selected.includes(match)) selected.push(match);
+      } else {
+        customParts.push(tok);
+      }
+    });
+
+    if (customParts.length > 0) {
+      if (!selected.includes("اخرى")) selected.push("اخرى");
+    }
+
+    return { selected, custom: customParts.join("، ") };
+  }
+
+  function computeProcedureName(selected: string[], custom: string) {
+    const parts: string[] = [];
+    selected.forEach((p) => {
+      if (p !== "أخرى") {
+        parts.push(p);
+      }
+    });
+    if (selected.includes("أخرى")) {
+      if (custom.trim()) {
+        parts.push(custom.trim());
+      } else {
+        parts.push("أخرى");
+      }
+    }
+    return parts.join("، ");
+  }
+
+  function parseProcedureName(rawProc: string) {
+    if (!rawProc) return { selected: [] as string[], custom: "" };
+    const tokens = rawProc.split(/[,،+]/).map((t) => t.trim()).filter(Boolean);
+    const selected: string[] = [];
+    const customParts: string[] = [];
+
+    tokens.forEach((tok) => {
+      const match = ["X-Ray", "MRI", "CT", "Doppler", "Echo", "U/S"].find(
+        (opt) => opt.toLowerCase() === tok.toLowerCase()
+      );
+      if (match) {
+        if (!selected.includes(match)) selected.push(match);
+      } else {
+        customParts.push(tok);
+      }
+    });
+
+    if (customParts.length > 0) {
+      if (!selected.includes("أخرى")) selected.push("أخرى");
+    }
+
+    return { selected, custom: customParts.join("، ") };
+  }
   const [radiationDose, setRadiationDose] = useState<number | "">("");
   const [cumulativeDose, setCumulativeDose] = useState<number | "">("");
   const [previousCumulativeDose, setPreviousCumulativeDose] = useState<number>(0);
@@ -121,8 +225,16 @@ function RadiationExposureContent() {
         setHeightCm(data.height_cm || "");
         setWeightKg(data.weight_kg || "");
         setAge(data.age || "");
-        setProcedureName(data.procedure_name || "");
-        setProcedureLocation(data.procedure_location || "");
+        const loadedProc = data.procedure_name || "";
+        setProcedureName(loadedProc);
+        const parsed = parseProcedureName(loadedProc);
+        setSelectedProcedures(parsed.selected);
+        setProcedureCustom(parsed.custom);
+        const loadedLoc = data.procedure_location || "";
+        setProcedureLocation(loadedLoc);
+        const parsedLoc = parseProcedureLocation(loadedLoc);
+        setSelectedLocations(parsedLoc.selected);
+        setLocationCustom(parsedLoc.custom);
         setRadiationDose(curDose);
         setCumulativeDose(curCum);
         setPreviousCumulativeDose(priorDose);
@@ -143,7 +255,11 @@ function RadiationExposureContent() {
     setWeightKg("");
     setAge("");
     setProcedureName("");
+    setSelectedProcedures([]);
+    setProcedureCustom("");
     setProcedureLocation("");
+    setSelectedLocations([]);
+    setLocationCustom("");
     setRadiationDose("");
     setCumulativeDose("");
     setPreviousCumulativeDose(0);
@@ -170,9 +286,10 @@ function RadiationExposureContent() {
       }
 
       setPatientId(data.id);
-      setPatientName((prev) => prev || data.full_name || "");
+      setMrn(data.mrn || cleanMrn);
+      setPatientName(data.full_name || "");
       if (data.age !== null && data.age !== undefined && data.age !== "") {
-        setAge((prev) => (prev !== "" ? prev : data.age));
+        setAge(data.age);
       } else {
         // Check other tables as fallback
         const [assessRes, fallRes] = await Promise.all([
@@ -181,7 +298,7 @@ function RadiationExposureContent() {
         ]);
         if (latestSearchMrnRef.current !== thisSearch) return;
         const foundAge = assessRes.data?.[0]?.age || fallRes.data?.[0]?.age;
-        if (foundAge) setAge(foundAge);
+        setAge(foundAge || "");
       }
       fetchPatientRadiationLogs(data.id, thisSearch);
     } catch (err) {}
@@ -433,7 +550,11 @@ function RadiationExposureContent() {
     setWeightKg("");
     setAge("");
     setProcedureName("");
+    setSelectedProcedures([]);
+    setProcedureCustom("");
     setProcedureLocation("");
+    setSelectedLocations([]);
+    setLocationCustom("");
     setRadiationDose("");
     setCumulativeDose("");
     setPreviousCumulativeDose(0);
@@ -507,10 +628,18 @@ function RadiationExposureContent() {
                   value={mrn}
                   onChange={(e) => {
                     setMrn(e.target.value);
-                    searchPatientByMrn(e.target.value);
+                    if (!e.target.value.trim()) {
+                      clearPatientFields();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchPatientByMrn(mrn);
+                    }
                   }}
                   placeholder="أدخل رقم الملف الطبي..."
-                  className={`w-full pl-9 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
+                  className={`w-full pl-24 pr-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm font-mono transition-all ${
                     isLocked
                       ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
                       : fieldErrors.mrn
@@ -518,7 +647,15 @@ function RadiationExposureContent() {
                       : "border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                   }`}
                 />
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <button
+                  type="button"
+                  disabled={isLocked}
+                  onClick={() => searchPatientByMrn(mrn)}
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-[#1d8a98] hover:bg-[#167480] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>بحث</span>
+                </button>
               </div>
               {fieldErrors.mrn && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.mrn}</p>
@@ -624,47 +761,209 @@ function RadiationExposureContent() {
         {/* SECTION 2: Examination & Radiation Dose Details */}
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                الاجراء <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                disabled={isLocked}
-                value={procedureName}
-                onChange={(e) => setProcedureName(e.target.value)}
-                placeholder="الاجراء..."
-                className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                  isLocked
-                    ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
-                    : fieldErrors.procedureName
-                    ? "border-rose-400 bg-rose-50/40"
-                    : "border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                }`}
-              />
+            <div className="md:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <label className="block text-xs font-bold text-slate-700">
+                  الإجراء المطلوب <span className="text-rose-500">*</span>
+                  <span className="text-slate-400 font-normal mr-1.5">(يمكنك اختيار إجراء واحد أو أكثر)</span>
+                </label>
+                {selectedProcedures.length > 0 && (
+                  <span className="text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                    <span>تم تحديد ({selectedProcedures.length}):</span>
+                    <strong className="text-sky-900">{procedureName || selectedProcedures.join("، ")}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                  {[
+                    { id: "X-Ray", label: "X-Ray" },
+                    { id: "MRI", label: "MRI" },
+                    { id: "CT", label: "CT" },
+                    { id: "Doppler", label: "Doppler" },
+                    { id: "Echo", label: "Echo" },
+                    { id: "U/S", label: "U/S" },
+                    { id: "أخرى", label: "أخرى" },
+                  ].map((item) => {
+                    const isSelected = selectedProcedures.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => {
+                          let next: string[];
+                          if (isSelected) {
+                            next = selectedProcedures.filter((p) => p !== item.id);
+                          } else {
+                            next = [...selectedProcedures, item.id];
+                          }
+                          setSelectedProcedures(next);
+                          setProcedureName(computeProcedureName(next, procedureCustom));
+                          if (fieldErrors.procedureName) {
+                            setFieldErrors((prev) => {
+                              const nextErr = { ...prev };
+                              delete nextErr.procedureName;
+                              return nextErr;
+                            });
+                          }
+                        }}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
+                          isLocked
+                            ? isSelected
+                              ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-sky-600 text-white border-sky-600 shadow-xs ring-2 ring-sky-200"
+                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:border-slate-400"
+                        }`}
+                      >
+                        <span
+                          className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] ${
+                            isSelected ? "bg-white text-sky-600 font-black" : "border border-slate-300"
+                          }`}
+                        >
+                          {isSelected ? "✓" : ""}
+                        </span>
+                        <span className="whitespace-nowrap">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedProcedures.includes("أخرى") && (
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+                    <input
+                      type="text"
+                      disabled={isLocked}
+                      value={procedureCustom}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProcedureCustom(val);
+                        setProcedureName(computeProcedureName(selectedProcedures, val));
+                        if (fieldErrors.procedureName) {
+                          setFieldErrors((prev) => {
+                            const nextErr = { ...prev };
+                            delete nextErr.procedureName;
+                            return nextErr;
+                          });
+                        }
+                      }}
+                      placeholder="اكتب الإجراء المطلوب بالتفصيل..."
+                      className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
+                        isLocked
+                          ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                          : fieldErrors.procedureName
+                          ? "border-rose-400 bg-rose-50/40"
+                          : "border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 bg-white"
+                      }`}
+                      autoFocus
+                    />
+                  </div>
+                )}
+              </div>
               {fieldErrors.procedureName && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureName}</p>
               )}
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                مكان الاجراء <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                disabled={isLocked}
-                value={procedureLocation}
-                onChange={(e) => setProcedureLocation(e.target.value)}
-                placeholder="مكان الاجراء..."
-                className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
-                  isLocked
-                    ? "bg-slate-100 text-slate-600 border-slate-200 cursor-not-allowed"
-                    : fieldErrors.procedureLocation
-                    ? "border-rose-400 bg-rose-50/40"
-                    : "border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                }`}
-              />
+            <div className="md:col-span-2 pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <label className="block text-xs font-bold text-slate-700">
+                  مكان الإجراء <span className="text-rose-500">*</span>
+                  <span className="text-slate-400 font-normal mr-1.5">(يمكنك اختيار مكان واحد أو أكثر)</span>
+                </label>
+                {selectedLocations.length > 0 && (
+                  <span className="text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                    <span>تم تحديد ({selectedLocations.length}):</span>
+                    <strong className="text-sky-900">{procedureLocation || selectedLocations.join("، ")}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap gap-2 sm:gap-2.5">
+                  {PROCEDURE_LOCATIONS.map((loc) => {
+                    const isSelected = selectedLocations.includes(loc);
+                    return (
+                      <button
+                        key={loc}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => {
+                          let next: string[];
+                          if (isSelected) {
+                            next = selectedLocations.filter((l) => l !== loc);
+                          } else {
+                            next = [...selectedLocations, loc];
+                          }
+                          setSelectedLocations(next);
+                          setProcedureLocation(computeProcedureLocation(next, locationCustom));
+                          if (fieldErrors.procedureLocation) {
+                            setFieldErrors((prev) => {
+                              const nextErr = { ...prev };
+                              delete nextErr.procedureLocation;
+                              return nextErr;
+                            });
+                          }
+                        }}
+                        className={`group px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-2 border select-none cursor-pointer ${
+                          isLocked
+                            ? isSelected
+                              ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-sky-600 text-white border-sky-600 shadow-sm ring-2 ring-sky-200 font-bold scale-[1.02]"
+                            : "bg-white text-slate-700 border-slate-200/90 hover:bg-sky-50/40 hover:border-sky-300 hover:text-sky-950 shadow-2xs"
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] shrink-0 transition-colors ${
+                            isSelected
+                              ? "bg-white text-sky-600 font-black shadow-2xs"
+                              : "border border-slate-300 bg-slate-50 group-hover:border-sky-300"
+                          }`}
+                        >
+                          {isSelected ? "✓" : ""}
+                        </span>
+                        <span className="whitespace-nowrap tracking-wide">{loc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedLocations.includes("اخرى") && (
+                  <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+                    <input
+                      type="text"
+                      disabled={isLocked}
+                      value={locationCustom}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setLocationCustom(val);
+                        setProcedureLocation(computeProcedureLocation(selectedLocations, val));
+                        if (fieldErrors.procedureLocation) {
+                          setFieldErrors((prev) => {
+                            const nextErr = { ...prev };
+                            delete nextErr.procedureLocation;
+                            return nextErr;
+                          });
+                        }
+                      }}
+                      placeholder="اكتب مكان الإجراء بالتفصيل..."
+                      className={`w-full px-3.5 py-2.5 border rounded-xl outline-none text-xs sm:text-sm transition-all ${
+                        isLocked
+                          ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                          : fieldErrors.procedureLocation
+                          ? "border-rose-400 bg-rose-50/40"
+                          : "border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 bg-white"
+                      }`}
+                      autoFocus
+                    />
+                  </div>
+                )}
+              </div>
               {fieldErrors.procedureLocation && (
                 <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.procedureLocation}</p>
               )}
