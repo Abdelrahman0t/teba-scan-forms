@@ -167,7 +167,7 @@ function PatientEducationContent() {
     },
   ]);
 
-  const { profile, role, isAdmin } = useUser();
+  const { profile, role, isAdmin, loading: authLoading } = useUser();
   const canEditNurse = isAdmin || role === "nurse";
   const canEditTech = isAdmin || role === "technician";
   const isNurseDisabled = isLocked || !canEditNurse;
@@ -191,7 +191,9 @@ function PatientEducationContent() {
   }, [profile?.full_name, role, editAssessmentId]);
 
   // Load from editId or mrn if present in URL
+  // Wait for auth to resolve so canEditNurse reflects the real role
   useEffect(() => {
+    if (authLoading) return;
     const editId = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
@@ -203,7 +205,7 @@ function PatientEducationContent() {
       if (nameParam) setPatientName(nameParam);
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams]);
+  }, [searchParams, authLoading]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -472,7 +474,7 @@ function PatientEducationContent() {
       }
 
       setPatientId(data.id);
-      setPatientName(data.full_name || "");
+      setPatientName((prev) => prev || data.full_name || "");
 
       // Check if patient already has an INCOMPLETE education record to resume
       const { data: educations } = await supabase

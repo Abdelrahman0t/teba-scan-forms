@@ -223,7 +223,7 @@ function FallRiskPediatricContent() {
   const [assessmentDate, setAssessmentDate] = useState(() => getCurrentDate());
   const [assessmentTime, setAssessmentTime] = useState(() => getCurrentTimeShort());
 
-  const { profile, role } = useUser();
+  const { profile, role, loading: authLoading } = useUser();
 
   // Auto-fill signature from authenticated user
   useEffect(() => {
@@ -288,7 +288,9 @@ function FallRiskPediatricContent() {
   }, [visibleProcedures]);
 
   // Load from editId or mrn if present
+  // Wait for auth so role/profile are known before searching
   useEffect(() => {
+    if (authLoading) return;
     const id = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
@@ -304,7 +306,7 @@ function FallRiskPediatricContent() {
       if (ageParam) setAge(Number(ageParam) || "");
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams]);
+  }, [searchParams, authLoading]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -409,7 +411,7 @@ function FallRiskPediatricContent() {
       }
 
       setPatientId(patient.id);
-      setPatientName(patient.full_name || "");
+      setPatientName((prev) => prev || patient.full_name || "");
 
       let resolvedGender = normalizeGender(patient.gender);
       let resolvedAge = (patient.age !== null && patient.age !== undefined && patient.age !== "") ? patient.age : null;
@@ -438,10 +440,10 @@ function FallRiskPediatricContent() {
       }
 
       if (resolvedGender) {
-        setGender(resolvedGender);
+        setGender((prev) => prev || resolvedGender);
       }
       if (resolvedAge !== null) {
-        setAge(resolvedAge);
+        setAge((prev) => (prev !== "" ? prev : resolvedAge));
       }
     } catch (err) {
       console.error("searchPatientByMrn error:", err);

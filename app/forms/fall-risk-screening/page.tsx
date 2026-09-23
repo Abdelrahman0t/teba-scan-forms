@@ -125,7 +125,7 @@ function FallRiskScreeningContent() {
   const [screeningDate, setScreeningDate] = useState(() => getCurrentDate());
   const [screeningTime, setScreeningTime] = useState(() => getCurrentTimeShort());
 
-  const { profile, role } = useUser();
+  const { profile, role, loading: authLoading } = useUser();
 
   // Auto-fill signature from authenticated user
   useEffect(() => {
@@ -158,7 +158,9 @@ function FallRiskScreeningContent() {
   }, [age]);
 
   // Load from editId or mrn if present
+  // Wait for auth so role/profile are known before searching
   useEffect(() => {
+    if (authLoading) return;
     const id = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
@@ -174,7 +176,7 @@ function FallRiskScreeningContent() {
       if (ageParam) setAge(Number(ageParam) || "");
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams]);
+  }, [searchParams, authLoading]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -252,7 +254,7 @@ function FallRiskScreeningContent() {
 
       if (patient) {
         setPatientId(patient.id);
-        setPatientName(patient.full_name || "");
+        setPatientName((prev) => prev || patient.full_name || "");
 
         let resolvedGender = normalizeGender(patient.gender);
         let resolvedAge = (patient.age !== null && patient.age !== undefined && patient.age !== "") ? patient.age : null;
@@ -283,10 +285,10 @@ function FallRiskScreeningContent() {
         }
 
         if (resolvedGender) {
-          setGender(resolvedGender);
+          setGender((prev) => prev || resolvedGender);
         }
         if (resolvedAge !== null) {
-          setAge(resolvedAge);
+          setAge((prev) => (prev !== "" ? prev : resolvedAge));
         }
       } else {
         // No match found -> clear all auto-filled fields

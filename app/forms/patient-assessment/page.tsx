@@ -89,7 +89,8 @@ function PatientAssessmentContent() {
   const searchParams = useSearchParams();
   const mrnInputRef = useRef<HTMLInputElement>(null);
   const latestSearchMrnRef = useRef("");
-  const { profile, role, isAdmin } = useUser();
+  const { profile, role, isAdmin, loading: authLoading } = useUser();
+  const urlParamsAppliedRef = useRef(false);
 
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
@@ -243,7 +244,10 @@ function PatientAssessmentContent() {
   }, [profile?.full_name, role, editId, nurseSignature, physicianSignature, techSignature]);
 
   // Load from editId or mrn if present
+  // Wait until auth is resolved so canEditNurse is based on the real role (not the initial loading state)
   useEffect(() => {
+    if (authLoading) return;
+
     const id = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
@@ -253,18 +257,22 @@ function PatientAssessmentContent() {
     if (id) {
       loadRecordForEdit(id);
     } else if (mrnParam) {
-      if (canEditNurse) {
+      // Pre-fill from URL params only once
+      if (!urlParamsAppliedRef.current) {
+        urlParamsAppliedRef.current = true;
         setMrn(mrnParam);
         if (nameParam) setPatientName(nameParam);
         if (genderParam) setGender(genderParam as any);
         if (ageParam) setAge(Number(ageParam) || "");
+      }
+      if (canEditNurse) {
         searchPatientByMrn(mrnParam);
       } else {
         setSearchMrnInput(mrnParam);
         searchPatientByMrn(mrnParam);
       }
     }
-  }, [searchParams, canEditNurse]);
+  }, [searchParams, authLoading, canEditNurse]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -606,7 +614,7 @@ function PatientAssessmentContent() {
 
       if (patient) {
         setPatientId(patient.id);
-        setPatientName(patient.full_name || "");
+        setPatientName((prev) => prev || patient.full_name || "");
 
         let resolvedGender = normalizeGender(patient.gender);
         let resolvedAge = (patient.age !== null && patient.age !== undefined && patient.age !== "") ? patient.age : null;
@@ -636,10 +644,10 @@ function PatientAssessmentContent() {
         }
 
         if (resolvedGender) {
-          setGender(resolvedGender);
+          setGender((prev) => prev || resolvedGender);
         }
         if (resolvedAge !== null) {
-          setAge(resolvedAge);
+          setAge((prev) => (prev !== "" ? prev : resolvedAge));
         }
       } else {
         // No match found -> clear all auto-filled fields

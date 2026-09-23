@@ -71,7 +71,7 @@ function RadiationExposureContent() {
   const [previousCumulativeDose, setPreviousCumulativeDose] = useState<number>(0);
   const [techSignature, setTechSignature] = useState("");
 
-  const { profile, role } = useUser();
+  const { profile, role, loading: authLoading } = useUser();
 
   // Auto-fill signature from authenticated user
   useEffect(() => {
@@ -81,7 +81,9 @@ function RadiationExposureContent() {
   }, [profile, techSignature]);
 
   // Load from editId or mrn if present in URL
+  // Wait for auth so role/profile are known before searching
   useEffect(() => {
+    if (authLoading) return;
     const editId = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
@@ -95,7 +97,7 @@ function RadiationExposureContent() {
       if (ageParam) setAge(Number(ageParam) || "");
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams]);
+  }, [searchParams, authLoading]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -168,9 +170,9 @@ function RadiationExposureContent() {
       }
 
       setPatientId(data.id);
-      setPatientName(data.full_name || "");
+      setPatientName((prev) => prev || data.full_name || "");
       if (data.age !== null && data.age !== undefined && data.age !== "") {
-        setAge(data.age);
+        setAge((prev) => (prev !== "" ? prev : data.age));
       } else {
         // Check other tables as fallback
         const [assessRes, fallRes] = await Promise.all([

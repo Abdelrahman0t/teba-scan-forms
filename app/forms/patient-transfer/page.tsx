@@ -226,7 +226,7 @@ function PatientTransferContent() {
   const [receivingDate, setReceivingDate] = useState(() => getCurrentDate());
   const [receivingTime, setReceivingTime] = useState(() => getCurrentTimeShort());
 
-  const { profile, role, isAdmin } = useUser();
+  const { profile, role, isAdmin, loading: authLoading } = useUser();
 
   // Auto-fill signatures from authenticated user according to role
   useEffect(() => {
@@ -328,7 +328,9 @@ function PatientTransferContent() {
   const isTransferInitiated = Boolean(editId && (receivingPhysicianSignature || totalRstpScore > 0));
 
   // Load from editId or mrn if present
+  // Wait for auth to resolve so canEditRadiologist reflects the real role
   useEffect(() => {
+    if (authLoading) return;
     const id = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
@@ -340,7 +342,7 @@ function PatientTransferContent() {
       if (nameParam) setPatientName(nameParam);
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams]);
+  }, [searchParams, authLoading]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -539,9 +541,9 @@ function PatientTransferContent() {
       }
 
       setPatientId(data.id);
-      setPatientName(data.full_name || "");
-      if (data.gender) setGender(data.gender as any);
-      if (data.age) setAge(data.age);
+      setPatientName((prev) => prev || data.full_name || "");
+      if (data.gender) setGender((prev) => prev || (data.gender as any));
+      if (data.age) setAge((prev) => (prev !== "" ? prev : data.age));
 
       // Check if patient already has an INCOMPLETE transfer record to resume
       const { data: transfers } = await supabase
