@@ -334,7 +334,7 @@ function PatientEducationContent() {
 
           setTopics([...coreMapped, ...customMapped]);
         }
-        setIsLocked(false);
+        setIsLocked(true);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -577,6 +577,11 @@ function PatientEducationContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+
+    if (editAssessmentId) {
+      setErrorMsg("هذا النموذج معتمد ومسجل مسبقاً ولا يمكن التعديل عليه.");
+      return;
+    }
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر وتحديد الاستيعاب والتوقيع للمواضيع التثقيفية.");
@@ -855,8 +860,8 @@ function PatientEducationContent() {
         </div>
 
         {editAssessmentId && (
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
-            {isLocked ? "تم الحفظ والتوثيق" : "وضع التعديل"}
+          <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg">
+            نموذج مسجل ومعتمد (للقراءة والطباعة فقط)
           </span>
         )}
       </div>

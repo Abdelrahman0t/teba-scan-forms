@@ -207,7 +207,7 @@ function FallRiskScreeningContent() {
         setScreenerSignature(data.screener_signature || "");
         if (data.screening_date) setScreeningDate(data.screening_date);
         if (data.screening_time) setScreeningTime(formatTime12(data.screening_time));
-        setIsLocked(false);
+        setIsLocked(true);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -311,6 +311,11 @@ function FallRiskScreeningContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+
+    if (editId) {
+      setErrorMsg("هذا النموذج معتمد ومسجل مسبقاً ولا يمكن التعديل عليه.");
+      return;
+    }
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
@@ -541,8 +546,8 @@ function FallRiskScreeningContent() {
         </div>
 
         {editId && (
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
-            {isLocked ? "تم الحفظ والتوثيق" : "وضع التعديل"}
+          <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg">
+            نموذج مسجل ومعتمد (للقراءة والطباعة فقط)
           </span>
         )}
       </div>

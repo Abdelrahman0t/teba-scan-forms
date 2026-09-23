@@ -306,12 +306,25 @@ function PatientTransferContent() {
     }
   }, [totalRstpScore]);
 
-  const canEditRadiologist = isAdmin || role === "radiologist";
-  const canEditNurse = isAdmin || role === "nurse";
+  const hasDoctorSubmitted = Boolean(
+    editId && (
+      (receivingPhysicianSignature && receivingPhysicianSignature.trim() && receivingPhysicianSignature !== "-") ||
+      (totalRstpScore > 0)
+    )
+  );
+  const hasNurseSubmitted = Boolean(
+    editId && (
+      receivingNurseSignature && receivingNurseSignature.trim() && receivingNurseSignature !== "-"
+    )
+  );
+  const isModelComplete = Boolean(editId && hasDoctorSubmitted && hasNurseSubmitted);
+
+  const canEditRadiologist = !hasDoctorSubmitted && (isAdmin || role === "radiologist");
+  const canEditNurse = !hasNurseSubmitted && (isAdmin || role === "nurse");
   const isNurse = role === "nurse" && !isAdmin;
   const isRadiologist = role === "radiologist" || isAdmin;
-  const isDoctorDisabled = isLocked || !canEditRadiologist;
-  const isNurseChecklistDisabled = isLocked || !canEditNurse;
+  const isDoctorDisabled = isLocked || isModelComplete || hasDoctorSubmitted || !canEditRadiologist;
+  const isNurseChecklistDisabled = isLocked || isModelComplete || hasNurseSubmitted || !canEditNurse;
   const isTransferInitiated = Boolean(editId && (receivingPhysicianSignature || totalRstpScore > 0));
 
   // Load from editId or mrn if present
@@ -397,7 +410,9 @@ function PatientTransferContent() {
         if (data.safety_checklist) setSafetyChecklist(data.safety_checklist);
         if (data.required_exams) setRequiredExams(data.required_exams);
         if (data.other_exam) setOtherExam(data.other_exam);
-        setIsLocked(false);
+        const hasDoc = Boolean(data.receiving_physician_signature || data.doctor_signature || (data.total_rstp_score !== null && data.total_rstp_score !== undefined));
+        const hasNur = Boolean(data.receiving_nurse_signature && data.receiving_nurse_signature !== "-");
+        setIsLocked(hasDoc && hasNur);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات النقل للتعديل: " + err.message);
@@ -568,6 +583,11 @@ function PatientTransferContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+
+    if (isModelComplete) {
+      setErrorMsg("هذا النموذج مكتمل ومعتمد بالكامل ولا يمكن التعديل عليه.");
+      return;
+    }
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
@@ -836,11 +856,31 @@ function PatientTransferContent() {
         </div>
 
         {editId && (
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
-            {isLocked ? "تم الحفظ والتوثيق" : "وضع التعديل"}
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+            isModelComplete ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"
+          }`}>
+            {isModelComplete ? "نموذج نقل مكتمل ومعتمد (للقراءة فقط)" : "استكمال دور متبقٍ"}
           </span>
         )}
       </div>
+
+      {/* Role Banner / Admin Guidance */}
+      {isAdmin && editId && (
+        <div className={`p-4 rounded-2xl border text-xs sm:text-sm flex items-start gap-3 shadow-xs no-print ${
+          isModelComplete ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold" : "bg-amber-50 border-amber-300 text-amber-950 font-bold"
+        }`}>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 font-bold text-base shadow-xs bg-white border border-slate-200">
+            {isModelComplete ? "✓" : "👑"}
+          </div>
+          <div>
+            <span>
+              {isModelComplete
+                ? "هذا النموذج مكتمل ومعتمد رسمياً من الطبيب والتمريض — للقراءة والطباعة فقط ولا يمكن تعديله."
+                : "تنبيه المسؤول: القسم المعتمد سابقاً مغلق للقراءة فقط. يمكنك كمسؤول استكمال وتوثيق المهام الشاغرة للدور المتبقي فقط دون تعديل ما تم اعتماده."}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Error Box */}
       {errorMsg && (

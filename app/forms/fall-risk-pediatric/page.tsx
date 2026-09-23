@@ -357,7 +357,7 @@ function FallRiskPediatricContent() {
         setNurseSignature(data.nurse_signature || "");
         if (data.assessment_date) setAssessmentDate(data.assessment_date);
         if (data.assessment_time) setAssessmentTime(formatTime12(data.assessment_time));
-        setIsLocked(false);
+        setIsLocked(true);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -462,6 +462,11 @@ function FallRiskPediatricContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+
+    if (editId) {
+      setErrorMsg("هذا النموذج معتمد ومسجل مسبقاً ولا يمكن التعديل عليه.");
+      return;
+    }
 
     if (!validateForm()) {
       setErrorMsg("يرجى استكمال البيانات الإجبارية الموضحة باللون الأحمر.");
@@ -711,8 +716,8 @@ function FallRiskPediatricContent() {
         </div>
 
         {editId && (
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
-            {isLocked ? "تم الحفظ والتوثيق" : "وضع التعديل"}
+          <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg">
+            نموذج مسجل ومعتمد (للقراءة والطباعة فقط)
           </span>
         )}
       </div>

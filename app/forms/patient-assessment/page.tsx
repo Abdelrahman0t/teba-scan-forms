@@ -89,11 +89,7 @@ function PatientAssessmentContent() {
   const searchParams = useSearchParams();
   const mrnInputRef = useRef<HTMLInputElement>(null);
   const latestSearchMrnRef = useRef("");
-
   const { profile, role, isAdmin } = useUser();
-  const canEditNurse = isAdmin || role === "nurse";
-  const canEditTech = isAdmin || role === "technician";
-  const canEditRadiologist = isAdmin || role === "radiologist";
 
   const [loading, setLoading] = useState(false);
   const [lastSavedRecord, setLastSavedRecord] = useState<any | null>(null);
@@ -109,10 +105,6 @@ function PatientAssessmentContent() {
     type: "idle" | "loading" | "success" | "warning" | "error" | "info";
     message: string;
   } | null>(null);
-
-  const isNurseDisabled = isLocked || !canEditNurse;
-  const isTechDisabled = isLocked || !canEditTech;
-  const isRadiologistDisabled = isLocked || !canEditRadiologist;
 
   // Patient Info
   const [mrn, setMrn] = useState("");
@@ -215,6 +207,25 @@ function PatientAssessmentContent() {
   // Signatures
   const [nurseSignature, setNurseSignature] = useState("");
   const [physicianSignature, setPhysicianSignature] = useState("");
+
+  // Permissions & Completion State:
+  // If a role has already submitted, that part CANNOT be updated by anyone (including the admin).
+  // An admin or role can ONLY fill/continue an unsubmitted, missing role's part.
+  const hasNurseSubmitted = Boolean(editId && nurseSignature && nurseSignature.trim() && nurseSignature !== "-");
+  const hasDoctorSubmitted = Boolean(
+    editId && physicianSignature && physicianSignature.trim() && physicianSignature !== "-" &&
+    (labCreatinine !== "" || labGfr !== "")
+  );
+  const hasTechSubmitted = Boolean(editId && techSignature && techSignature.trim() && techSignature !== "-");
+  const isModelComplete = Boolean(editId && hasNurseSubmitted && hasDoctorSubmitted && hasTechSubmitted);
+
+  const canEditNurse = !hasNurseSubmitted && (isAdmin || role === "nurse");
+  const canEditRadiologist = !hasDoctorSubmitted && (isAdmin || role === "radiologist");
+  const canEditTech = !hasTechSubmitted && (isAdmin || role === "technician");
+
+  const isNurseDisabled = isLocked || isModelComplete || hasNurseSubmitted || !canEditNurse;
+  const isTechDisabled = isLocked || isModelComplete || hasTechSubmitted || !canEditTech;
+  const isRadiologistDisabled = isLocked || isModelComplete || hasDoctorSubmitted || !canEditRadiologist;
 
   // Auto-fill signatures according to user role for new records
   useEffect(() => {
@@ -409,7 +420,11 @@ function PatientAssessmentContent() {
         if (data.medications && Array.isArray(data.medications)) setMedications(data.medications);
         setNurseSignature(data.nurse_signature || "");
         setPhysicianSignature(data.physician_signature || "");
-        setIsLocked(false);
+        const hasNurse = Boolean(data.nurse_signature && data.nurse_signature !== "-");
+        const hasDoc = Boolean(data.physician_signature && data.physician_signature !== "-" && (data.lab_creatinine || data.lab_gfr));
+        const hasTech = Boolean(data.tech_signature && data.tech_signature !== "-");
+        const complete = hasNurse && hasDoc && hasTech;
+        setIsLocked(complete);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -707,6 +722,11 @@ function PatientAssessmentContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+
+    if (isModelComplete) {
+      setErrorMsg("هذا النموذج مكتمل ومعتمد بالكامل ولا يمكن التعديل عليه.");
+      return;
+    }
 
     if (!validateForm()) {
       if (role === "radiologist") {
@@ -1175,8 +1195,10 @@ function PatientAssessmentContent() {
         </div>
 
         {editId && (
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
-            {isLocked ? "تم الحفظ والتوثيق" : "وضع التعديل"}
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+            isModelComplete ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"
+          }`}>
+            {isModelComplete ? "نموذج مكتمل ومعتمد (للقراءة فقط)" : "استكمال دور متبقٍ"}
           </span>
         )}
       </div>
@@ -1198,7 +1220,7 @@ function PatientAssessmentContent() {
           <div className="font-bold flex items-center gap-2">
             <span>
               {isAdmin
-                ? "حساب مسؤول عام (صلاحيات كاملة)"
+                ? "حساب مسؤول عام (صلاحيات استكمال)"
                 : role === "nurse"
                 ? "دورك الحالي: تمريض (Nurse)"
                 : role === "technician"
@@ -1213,7 +1235,11 @@ function PatientAssessmentContent() {
           </div>
           <p className="text-[11px] sm:text-xs mt-1 leading-relaxed opacity-95">
             {isAdmin
-              ? "بصفتك مسؤول النظام، يمكنك تعديل وحفظ كافة أقسام التقييم الشامل بدون أي قيود."
+              ? editId
+                ? isModelComplete
+                  ? "هذا النموذج مكتمل ومعتمد رسمياً من جميع الأطراف — للقراءة والطباعة فقط ولا يمكن تعديله."
+                  : "بصفتك مسؤولاً، تم قفل الأقسام المعتمدة سابقاً للقراءة فقط. يمكنك استكمال وتوثيق المهام الشاغرة للأدوار المتبقية في هذا النموذج دون تعديل ما تم اعتماده."
+                : "بصفتك مسؤول النظام، يمكنك بدء نموذج جديد أو استكمال النماذج غير المكتملة للأدوار الأخرى."
               : role === "nurse"
               ? "صلاحياتك: البيانات العامة، العلامات الحيوية، التاريخ المرضي، التقييم السريري، تقييم السيدات، خطة رعاية السقوط، والوصلات والأدوية."
               : role === "technician"

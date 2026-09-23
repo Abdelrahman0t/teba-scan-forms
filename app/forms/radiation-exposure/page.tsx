@@ -125,7 +125,7 @@ function RadiationExposureContent() {
         setCumulativeDose(curCum);
         setPreviousCumulativeDose(priorDose);
         setTechSignature(data.tech_signature || "");
-        setIsLocked(false);
+        setIsLocked(true);
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -247,6 +247,11 @@ function RadiationExposureContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+
+    if (editLogId) {
+      setErrorMsg("هذا النموذج معتمد ومسجل مسبقاً ولا يمكن التعديل عليه.");
+      return;
+    }
 
     if (!validateForm()) {
       setErrorMsg("كافة الحقول إجبارية. يرجى استكمال البيانات الموضحة باللون الأحمر.");
@@ -462,8 +467,8 @@ function RadiationExposureContent() {
         </div>
 
         {editLogId && (
-          <span className="text-xs font-semibold px-2.5 py-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-lg">
-            {isLocked ? "تم الحفظ والتوثيق" : "وضع التعديل"}
+          <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg">
+            نموذج مسجل ومعتمد (للقراءة والطباعة فقط)
           </span>
         )}
       </div>
