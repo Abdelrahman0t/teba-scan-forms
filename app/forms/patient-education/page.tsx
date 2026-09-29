@@ -60,6 +60,42 @@ const CORE_PDF_TOPICS = [
   "تثقيف المريض علي تعليمات ما بعد الإجراء.",
 ];
 
+export function getRequiredEducationRoles(procedureStr: string, selectedProcs?: string[]) {
+  const combined = [procedureStr || "", ...(selectedProcs || [])].join(" ").toLowerCase();
+
+  // Echo, U/S, Doppler -> Radiologist
+  const hasRadio =
+    combined.includes("echo") ||
+    combined.includes("u/s") ||
+    combined.includes("doppler") ||
+    combined.includes("سونار") ||
+    combined.includes("ايكو") ||
+    combined.includes("دوبلر");
+
+  // X-Ray, MRI, CT -> Technician
+  const hasTech =
+    combined.includes("x-ray") ||
+    combined.includes("xray") ||
+    combined.includes("mri") ||
+    combined.includes("ct") ||
+    combined.includes("رنين") ||
+    combined.includes("مقطعية") ||
+    combined.includes("اشعة عادية");
+
+  const hasOther =
+    combined.includes("أخرى") ||
+    combined.includes("اخرى") ||
+    (!hasRadio && !hasTech);
+
+  const isBothOrOther = hasOther || (hasRadio && hasTech);
+
+  if (isBothOrOther) {
+    return { needsRadiologist: true, needsTechnician: true, isBothOrOther: true };
+  }
+
+  return { needsRadiologist: hasRadio, needsTechnician: hasTech, isBothOrOther: false };
+}
+
 interface TopicItem {
   id: string;
   topic_name: string;
@@ -272,8 +308,24 @@ function PatientEducationContent() {
   ]);
 
   const { profile, role, isAdmin, loading: authLoading } = useUser();
+  const { needsRadiologist, needsTechnician, isBothOrOther } = getRequiredEducationRoles(
+    procedureName,
+    selectedProcedures
+  );
+
+  const secondRoleTitle = isBothOrOther
+    ? "الفني او الطبيب"
+    : needsRadiologist
+    ? "طبيب الأشعة"
+    : "فني الأشعة";
+
   const canEditNurse = isAdmin || role === "nurse";
   const canEditTech = isAdmin || role === "technician";
+  const canEditRadiologist = isAdmin || role === "radiologist";
+  const canEditSecondRole =
+    isAdmin ||
+    (needsTechnician && role === "technician") ||
+    (needsRadiologist && role === "radiologist");
   const isNurseDisabled = !canEditNurse;
 
   // Auto-fill educator name according to user role
@@ -285,14 +337,20 @@ function PatientEducationContent() {
           if (role === "nurse" && idx < 3) {
             return { ...t, educator_name: profile.full_name };
           }
-          if (role === "technician" && idx >= 3 && idx < 6) {
+          if (
+            ((needsTechnician && role === "technician") ||
+              (needsRadiologist && role === "radiologist") ||
+              isAdmin) &&
+            idx >= 3 &&
+            idx < 6
+          ) {
             return { ...t, educator_name: profile.full_name };
           }
           return t;
         })
       );
     }
-  }, [profile?.full_name, role, editAssessmentId]);
+  }, [profile?.full_name, role, editAssessmentId, needsTechnician, needsRadiologist, isAdmin]);
 
   // Load from editId or mrn if present in URL
   // Wait for auth to resolve so canEditNurse reflects the real role
@@ -309,7 +367,7 @@ function PatientEducationContent() {
       if (nameParam) setPatientName(nameParam);
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams, authLoading]);
+  }, [searchParams, authLoading, role, isAdmin]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -441,7 +499,29 @@ function PatientEducationContent() {
 
           setTopics([...coreMapped, ...customMapped]);
         }
-        setIsLocked(!canEditNurse);
+
+        const entries = data.health_education_topic_entries || [];
+        const nursePrefixes = ["تحضير", "التنبيه علي السيدة", "السقوط"];
+        const techPrefixes = ["المخاطر المحتملة", "بالصبغة", "تعليمات ما بعد الإجراء"];
+
+        const hasNurseCompleted = nursePrefixes.every((p) =>
+          entries.some((e: any) => e.topic_name?.includes(p) && e.is_comprehended !== null && Boolean(e.educator_name?.trim()))
+        );
+        const hasTechCompleted = techPrefixes.every((p) =>
+          entries.some((e: any) => e.topic_name?.includes(p) && e.is_comprehended !== null && Boolean(e.educator_name?.trim()))
+        );
+        const modelDone = hasNurseCompleted && hasTechCompleted;
+        const { needsRadiologist: recRadio, needsTechnician: recTech } = getRequiredEducationRoles(
+          loadedProc,
+          parsed.selected
+        );
+
+        const isUserAuthorized =
+          isAdmin ||
+          role === "nurse" ||
+          (recTech && role === "technician") ||
+          (recRadio && role === "radiologist");
+        setIsLocked(!isUserAuthorized || (modelDone && !isAdmin));
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات السجل للتعديل: " + err.message);
@@ -545,21 +625,24 @@ function PatientEducationContent() {
           clearPatientFields();
           setSearchStatus({
             type: "info",
-            message: `نموذج تثقيف المريض الخاص بالمريض (${patient.full_name}) مكتمل بالفعل وموقع من كافة الأطراف (التمريض وفني الأشعة). لا توجد نماذج غير مكتملة بحاجة إلى استكمال.`,
+            message: `نموذج تثقيف المريض الخاص بالمريض (${patient.full_name}) مكتمل بالفعل وموقع من كافة الأطراف. لا توجد نماذج غير مكتملة بحاجة إلى استكمال.`,
           });
           return;
         }
 
-        // Target the incomplete education form where technician is missing, or the most recent one
+        // Target the incomplete education form where current user's role is missing, or the most recent one
         const target = incompleteList.find((e) => {
           const s = getFormStatusInfo({ ...e, formType: "education" });
           return role ? s.missingRoles.includes(role as any) : true;
         }) || incompleteList[0];
 
         await loadRecordForEdit(target.id);
+        const { needsRadiologist: tRadio, needsTechnician: tTech } = getRequiredEducationRoles(target.procedure_name || "");
+        const tRoleTitle = tRadio && !tTech ? "طبيب الأشعة" : tTech && !tRadio ? "فني الأشعة" : "فني أو طبيب الأشعة";
+
         setSearchStatus({
           type: "success",
-          message: `تم العثور على نموذج غير مكتمل للمريض (${patient.full_name || cleanMrn}). تم تحميل بيانات التثقيف بنجاح، يمكنك الآن استكمال وتوثيق بنود فني الأشعة (4-6).`,
+          message: `تم العثور على نموذج غير مكتمل للمريض (${patient.full_name || cleanMrn}). تم تحميل بيانات التثقيف بنجاح، يمكنك الآن استكمال وتوثيق بنود ${tRoleTitle} (4-6).`,
         });
       } catch (err: any) {
         console.error("searchPatientByMrn error:", err);
@@ -636,8 +719,8 @@ function PatientEducationContent() {
       }
     }
 
-    // Technician must fill items 4, 5, 6 (indices 3, 4, 5)
-    if (role === "technician") {
+    // Technician must fill items 4, 5, 6 (indices 3, 4, 5) if technician is required
+    if (role === "technician" && needsTechnician) {
       const techTopics = topics.slice(3, 6);
       const unselectedTech = techTopics.filter((t) => t.is_comprehended === null);
       if (unselectedTech.length > 0) {
@@ -645,8 +728,17 @@ function PatientEducationContent() {
       }
     }
 
-    // Admin or when role is not technician/nurse: ensure appropriate topics are filled
-    if (isAdmin && role !== "nurse" && role !== "technician") {
+    // Radiologist must fill items 4, 5, 6 (indices 3, 4, 5) if radiologist is required
+    if (role === "radiologist" && needsRadiologist) {
+      const radioTopics = topics.slice(3, 6);
+      const unselectedRadio = radioTopics.filter((t) => t.is_comprehended === null);
+      if (unselectedRadio.length > 0) {
+        errors.topicsComprehension = `يرجى تحديد (نعم أو لا) للمواضيع التثقيفية الخاصة بطبيب الأشعة (بنود 4-6). المتبقي: ${unselectedRadio.length}`;
+      }
+    }
+
+    // Admin or when role is not technician/nurse/radiologist: ensure appropriate topics are filled
+    if (isAdmin && role !== "nurse" && role !== "technician" && role !== "radiologist") {
       const coreTopics = topics.filter((t) => !t.is_custom);
       const unselected = coreTopics.filter((t) => t.is_comprehended === null);
       if (unselected.length > 3 && !editAssessmentId) {
@@ -678,8 +770,8 @@ function PatientEducationContent() {
     e.preventDefault();
     setErrorMsg("");
 
-    if (editAssessmentId) {
-      setErrorMsg("هذا النموذج معتمد ومسجل مسبقاً ولا يمكن التعديل عليه.");
+    if (isLocked) {
+      setErrorMsg("هذا النموذج مكتمل ومعتمد بالكامل ولا يمكن التعديل عليه.");
       return;
     }
 
@@ -764,19 +856,30 @@ function PatientEducationContent() {
             .eq("id", editAssessmentId);
 
           if (aUpdateErr) throw new Error(`خطأ تحديث التقييم: ${aUpdateErr.message}`);
+        }
 
-          // Also sync with form_submissions if linked
-          const { data: existingAssess } = await supabase
-            .from("health_education_assessments")
-            .select("submission_id")
-            .eq("id", editAssessmentId)
-            .single();
+        // Also sync with form_submissions if linked (for both Nurse & Technician updates)
+        const { data: existingAssess } = await supabase
+          .from("health_education_assessments")
+          .select("submission_id")
+          .eq("id", editAssessmentId)
+          .single();
 
-          if (existingAssess?.submission_id) {
-            await supabase
-              .from("form_submissions")
-              .update({
-                data: {
+        if (existingAssess?.submission_id) {
+          const { data: subCurrent } = await supabase
+            .from("form_submissions")
+            .select("data")
+            .eq("id", existingAssess.submission_id)
+            .maybeSingle();
+
+          const prevData = subCurrent?.data || {};
+
+          await supabase
+            .from("form_submissions")
+            .update({
+              data: {
+                ...prevData,
+                ...(canEditNurse ? {
                   mrn,
                   patient_name: patientName,
                   education_date: educationDate,
@@ -790,11 +893,11 @@ function PatientEducationContent() {
                   target_recipient: targetRecipient,
                   education_method: finalMethodString ? [finalMethodString] : [],
                   other_method_text: otherMethodText.trim() || null,
-                  topics: processedTopics,
-                },
-              })
-              .eq("id", existingAssess.submission_id);
-          }
+                } : {}),
+                topics: processedTopics,
+              },
+            })
+            .eq("id", existingAssess.submission_id);
         }
 
         // Delete old topics and insert fresh topic entries
@@ -993,11 +1096,25 @@ function PatientEducationContent() {
           </div>
         </div>
 
-        {editAssessmentId && (
+        {editAssessmentId && isLocked ? (
           <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg">
-            نموذج مسجل ومعتمد (للقراءة والطباعة فقط)
+            نموذج مكتمل ومعتمد بالكامل (للقراءة والطباعة فقط)
           </span>
-        )}
+        ) : editAssessmentId && (role === "technician" || role === "radiologist") ? (
+          <span className="text-xs font-semibold px-2.5 py-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-lg flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
+            <span>استكمال توثيق واعتماد {role === "radiologist" ? "طبيب الأشعة" : "فني الأشعة"} (بنود 4-6)</span>
+          </span>
+        ) : editAssessmentId && role === "nurse" ? (
+          <span className="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            <span>استكمال توثيق واعتماد التمريض (بنود 1-3)</span>
+          </span>
+        ) : editAssessmentId ? (
+          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
+            تعديل واعتماد النموذج (إدارة النظام)
+          </span>
+        ) : null}
       </div>
 
       {/* Error Alert Box */}
@@ -1329,6 +1446,31 @@ function PatientEducationContent() {
                       }`}
                       autoFocus
                     />
+                  </div>
+                )}
+
+                {/* Dynamic Role Responsibility Notice (Matching Patient Assessment) */}
+                {selectedProcedures.length > 0 && (
+                  <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all ${
+                    isBothOrOther
+                      ? "bg-purple-50/80 border-purple-200 text-purple-950"
+                      : needsRadiologist
+                      ? "bg-purple-50/80 border-purple-200 text-purple-950"
+                      : "bg-teal-50/80 border-teal-200 text-teal-950"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold">المسؤول عن استكمال باقي بنود التثقيف (4-6):</span>
+                      <span className="font-extrabold underline decoration-2">
+                        {isBothOrOther
+                          ? "الفني او الطبيب"
+                          : needsRadiologist
+                          ? "طبيب الأشعة فقط (أخصائي الأشعة)"
+                          : "فني الأشعة فقط"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-white/90 border border-current">
+                      {secondRoleTitle}
+                    </span>
                   </div>
                 )}
               </div>
@@ -1917,9 +2059,32 @@ function PatientEducationContent() {
                 3. المواضيع التثقيفية المنفذة
               </h3>
               <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-bold">
-                بنود 1-3 تمريض • بنود 4-6 فني الأشعة
+                بنود 1-3 تمريض • بنود 4-6 {secondRoleTitle}
               </span>
             </div>
+          </div>
+
+          {/* Dynamic role distribution banner */}
+          <div className={`p-3 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
+            needsRadiologist && !needsTechnician
+              ? "bg-purple-50/80 border-purple-200 text-purple-950"
+              : needsTechnician && !needsRadiologist
+              ? "bg-teal-50/80 border-teal-200 text-teal-950"
+              : "bg-blue-50/80 border-blue-200 text-blue-950"
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="font-bold">توزيع أدوار التثقيف:</span>
+              <span>
+                بنود (1-3) خاصة بالتمريض • بنود (4-6) مخصصة لـ{" "}
+                <strong className="underline decoration-2 font-black text-sm">
+                  {secondRoleTitle}
+                </strong>{" "}
+                {procedureName ? `بناءً على اختيار فحص (${procedureName})` : "(بانتظار تحديد الفحص من التمريض)"}
+              </span>
+            </div>
+            <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-white border border-current self-start sm:self-center shrink-0">
+              المسؤول عن بنود 4-6: {secondRoleTitle}
+            </span>
           </div>
 
           {fieldErrors.topicsComprehension && (
@@ -1951,14 +2116,21 @@ function PatientEducationContent() {
               <tbody className="divide-y divide-slate-200 bg-white">
                 {topics.map((t, idx) => {
                   const isNurseItem = idx < 3;
-                  const isTechItem = idx >= 3 && idx < 6;
+                  const isSecondRoleItem = idx >= 3 && idx < 6;
                   const isCustomItem = t.is_custom;
 
                   const canEditThisRow = !isLocked && (
                     isAdmin ||
                     (isNurseItem && role === "nurse") ||
-                    (isTechItem && role === "technician") ||
-                    (isCustomItem && (role === "nurse" || role === "technician"))
+                    (isSecondRoleItem && (
+                      (needsTechnician && role === "technician") ||
+                      (needsRadiologist && role === "radiologist")
+                    )) ||
+                    (isCustomItem && (
+                      role === "nurse" ||
+                      (needsTechnician && role === "technician") ||
+                      (needsRadiologist && role === "radiologist")
+                    ))
                   );
 
                   return (
@@ -1995,11 +2167,15 @@ function PatientEducationContent() {
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold self-start shrink-0 border ${
                             isNurseItem
                               ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : isTechItem
+                              : isSecondRoleItem
                               ? "bg-purple-50 text-purple-700 border-purple-200"
                               : "bg-emerald-50 text-emerald-700 border-emerald-200"
                           }`}>
-                            {isNurseItem ? "خاص بالتمريض" : isTechItem ? "خاص بفني الأشعة" : "إضافي"}
+                            {isNurseItem
+                              ? "خاص بالتمريض"
+                              : isSecondRoleItem
+                              ? `خاص بـ ${secondRoleTitle}`
+                              : "إضافي"}
                           </span>
                         </div>
                       </td>
@@ -2018,7 +2194,11 @@ function PatientEducationContent() {
                           </div>
                         ) : (
                           <span className="text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-[10px] font-bold inline-block">
-                            {isNurseItem ? "بانتظار التمريض" : isTechItem ? "بانتظار فني الأشعة" : "غير محدد"}
+                            {isNurseItem
+                              ? "بانتظار التمريض"
+                              : isSecondRoleItem
+                              ? `بانتظار ${secondRoleTitle}`
+                              : "غير محدد"}
                           </span>
                         )}
                       </td>
@@ -2034,7 +2214,15 @@ function PatientEducationContent() {
                             onClick={() => {
                               const updated = [...topics];
                               updated[idx].is_comprehended = true;
-                              if (!updated[idx].educator_name || (isNurseItem && role === "nurse") || (isTechItem && role === "technician")) {
+                              if (
+                                !updated[idx].educator_name ||
+                                (isNurseItem && role === "nurse") ||
+                                (isSecondRoleItem && (
+                                  (needsTechnician && role === "technician") ||
+                                  (needsRadiologist && role === "radiologist") ||
+                                  isAdmin
+                                ))
+                              ) {
                                 updated[idx].educator_name = profile?.full_name || updated[idx].educator_name;
                               }
                               setTopics(updated);
@@ -2054,7 +2242,15 @@ function PatientEducationContent() {
                             onClick={() => {
                               const updated = [...topics];
                               updated[idx].is_comprehended = false;
-                              if (!updated[idx].educator_name || (isNurseItem && role === "nurse") || (isTechItem && role === "technician")) {
+                              if (
+                                !updated[idx].educator_name ||
+                                (isNurseItem && role === "nurse") ||
+                                (isSecondRoleItem && (
+                                  (needsTechnician && role === "technician") ||
+                                  (needsRadiologist && role === "radiologist") ||
+                                  isAdmin
+                                ))
+                              ) {
                                 updated[idx].educator_name = profile?.full_name || updated[idx].educator_name;
                               }
                               setTopics(updated);
@@ -2127,7 +2323,7 @@ function PatientEducationContent() {
           <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
             <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-600" />
-              <span>4. توثيق وتاريخ التثقيف الصحي</span>
+              <span>4. توثيق واعتماد التثقيف الصحي</span>
             </h3>
             <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />
@@ -2135,21 +2331,97 @@ function PatientEducationContent() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                مسؤول التثقيف الصحي
-              </label>
-              <div className="bg-slate-50 px-3.5 py-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs sm:text-sm">
-                <span className="font-bold text-slate-800">
-                  {profile?.full_name || "مسؤول التثقيف"}
-                </span>
-                <span className="text-[10px] bg-white border border-slate-300 text-slate-600 px-2 py-0.5 rounded-md font-bold">
-                  {role === "nurse" ? "التمريض" : role === "technician" ? "فني الأشعة" : "موثق معتمد"}
-                </span>
-              </div>
-            </div>
+          {/* Dual Approval Cards: Nurse & Second Role (Technician or Radiologist) */}
+          {(() => {
+            const nurseEducator = topics.slice(0, 3).find((t) => t.educator_name)?.educator_name || (role === "nurse" ? profile?.full_name : "");
+            const isNurseDone = topics.slice(0, 3).every((t) => t.is_comprehended !== null && Boolean(t.educator_name || (role === "nurse" && profile?.full_name)));
 
+            const isCurrentSecondRole =
+              (needsTechnician && role === "technician") ||
+              (needsRadiologist && role === "radiologist");
+
+            const secondRoleEducator =
+              topics.slice(3, 6).find((t) => t.educator_name)?.educator_name ||
+              (isCurrentSecondRole ? profile?.full_name : "");
+            const isSecondRoleDone = topics.slice(3, 6).every((t) => t.is_comprehended !== null && Boolean(t.educator_name || (isCurrentSecondRole && profile?.full_name)));
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Nurse Verification Card */}
+                <div className={`p-4 rounded-2xl border transition-all ${
+                  role === "nurse" ? "border-blue-300 bg-blue-50/60 shadow-xs" : isNurseDone ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-slate-50/50"
+                }`}>
+                  <div className="flex justify-between items-center mb-2.5">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <CheckCircle2 className={`w-4 h-4 ${isNurseDone ? "text-emerald-600" : "text-blue-600"}`} />
+                      <span>اعتماد التمريض (بنود 1-3)</span>
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                      isNurseDone
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-blue-100 text-blue-800 border-blue-200"
+                    }`}>
+                      {isNurseDone ? "معتمد ✓" : "بانتظار التمريض"}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs sm:text-sm font-bold text-slate-800 font-mono">
+                        {nurseEducator || "في انتظار توثيق التمريض"}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {isNurseDone ? "تم توثيق تعليمات المريض والسقوط" : "يتطلب اعتماد التمريض"}
+                      </div>
+                    </div>
+                    {isNurseDone && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>معتمد</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Second Role Verification Card */}
+                <div className={`p-4 rounded-2xl border transition-all ${
+                  isCurrentSecondRole ? "border-purple-300 bg-purple-50/60 shadow-xs" : isSecondRoleDone ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-slate-50/50"
+                }`}>
+                  <div className="flex justify-between items-center mb-2.5">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <CheckCircle2 className={`w-4 h-4 ${isSecondRoleDone ? "text-emerald-600" : "text-purple-600"}`} />
+                      <span>اعتماد {secondRoleTitle} (بنود 4-6)</span>
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                      isSecondRoleDone
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-purple-100 text-purple-800 border-purple-200"
+                    }`}>
+                      {isSecondRoleDone ? "معتمد ✓" : `بانتظار ${secondRoleTitle}`}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs sm:text-sm font-bold text-slate-800 font-mono">
+                        {secondRoleEducator || (isCurrentSecondRole ? profile?.full_name || "جاري التوثيق..." : `في انتظار ${secondRoleTitle}`)}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        {isSecondRoleDone ? "تم توثيق مخاطر الأشعة والصبغة" : `يتطلب اعتماد ${secondRoleTitle}`}
+                      </div>
+                    </div>
+                    {isSecondRoleDone && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>معتمد</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Date & Time */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 تاريخ التثقيف <span className="text-slate-400 font-normal">(آلي)</span>
@@ -2192,17 +2464,29 @@ function PatientEducationContent() {
             isLocked={isLocked}
             fieldErrors={fieldErrors}
             defaultText={
-              role === "technician"
+              (needsRadiologist && role === "radiologist")
+                ? "اعتماد وتوثيق بنود طبيب الأشعة (4-6)"
+                : (needsTechnician && role === "technician")
+                ? "اعتماد وتوثيق بنود فني الأشعة (4-6)"
+                : role === "radiologist"
+                ? "اعتماد وتوثيق بنود طبيب الأشعة (4-6)"
+                : role === "technician"
                 ? "اعتماد وتوثيق بنود فني الأشعة (4-6)"
                 : role === "nurse"
                 ? "اعتماد وتوثيق بنود التمريض (1-3)"
                 : "حفظ وتوثيق كشف التثقيف الصحي"
             }
             editText={
-              role === "technician"
-                ? "حفظ وتوثيق بنود فني الأشعة (4-6)"
+              (needsRadiologist && role === "radiologist")
+                ? "اعتماد وتوثيق بنود طبيب الأشعة (4-6)"
+                : (needsTechnician && role === "technician")
+                ? "اعتماد وتوثيق بنود فني الأشعة (4-6)"
+                : role === "radiologist"
+                ? "اعتماد وتوثيق بنود طبيب الأشعة (4-6)"
+                : role === "technician"
+                ? "اعتماد وتوثيق بنود فني الأشعة (4-6)"
                 : role === "nurse"
-                ? "حفظ وتوثيق بنود التمريض (1-3)"
+                ? "اعتماد وتوثيق بنود التمريض (1-3)"
                 : "حفظ وتوثيق التعديلات"
             }
             isEdit={!!editAssessmentId}
@@ -2404,7 +2688,7 @@ function PatientEducationContent() {
 export default function PatientEducationPage() {
   return (
     <Suspense fallback={<div className="p-8 text-center text-xs text-slate-500">جاري التحميل...</div>}>
-      <FormRoleGuard allowedRoles={["nurse", "technician"]} formTitle="نموذج التثقيف الصحي — TRC.MRS">
+      <FormRoleGuard allowedRoles={["nurse", "technician", "radiologist"]} formTitle="نموذج التثقيف الصحي — TRC.MRS">
         <PatientEducationContent />
       </FormRoleGuard>
     </Suspense>

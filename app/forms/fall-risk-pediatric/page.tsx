@@ -60,13 +60,13 @@ export const PEDIATRIC_FALL_PREVENTION_PROCEDURES = [
   {
     id: 1,
     category: "احتياطات الوقاية من السقوط القياسية (منخفضة المخاطر)",
-    text: "حث الأم على البقاء بجوار الطفل (في الأقسام التي يوجد بها مرافق.)",
+    text: "حث الأم على البقاء بجوار الطفل",
     level: "منخفضة المخاطر",
   },
   {
     id: 2,
     category: "احتياطات الوقاية من السقوط القياسية (منخفضة المخاطر)",
-    text: "توفير نظام للاستدعاء في متناول اليد.",
+    text: "توفير نظام للاستدعاء في متناول اليد (دورة المياه).",
     level: "منخفضة المخاطر",
   },
   {
@@ -78,7 +78,7 @@ export const PEDIATRIC_FALL_PREVENTION_PROCEDURES = [
   {
     id: 4,
     category: "احتياطات الوقاية من السقوط القياسية (منخفضة المخاطر)",
-    text: "رفع جوانب السرير / غلق الحضانة دائما وعدم فتحها إلا من جانب واحد.",
+    text: "رفع جوانب السرير.",
     level: "منخفضة المخاطر",
   },
   {
@@ -94,7 +94,7 @@ export const PEDIATRIC_FALL_PREVENTION_PROCEDURES = [
     level: "منخفضة المخاطر",
   },
 
-  // 7 to 12 (متوسطة المخاطر - Moderate Risk Interventions)
+  // 7 to 11 (متوسطة المخاطر - Moderate Risk Interventions)
   {
     id: 7,
     category: "تدخلات الوقاية من المخاطر المعتدلة (متوسطة المخاطر)",
@@ -110,7 +110,7 @@ export const PEDIATRIC_FALL_PREVENTION_PROCEDURES = [
   {
     id: 9,
     category: "تدخلات الوقاية من المخاطر المعتدلة (متوسطة المخاطر)",
-    text: "وضع ملصق السرير (حرف F) وكتابة حرف F على أسورة التعريف.",
+    text: "وضع ملصق حرف F",
     level: "متوسط المخاطر",
   },
   {
@@ -122,51 +122,45 @@ export const PEDIATRIC_FALL_PREVENTION_PROCEDURES = [
   {
     id: 11,
     category: "تدخلات الوقاية من المخاطر المعتدلة (متوسطة المخاطر)",
-    text: "توفير الحواجز الواقية لإغلاق المساحات، والفجوات في الأسرة.",
-    level: "متوسط المخاطر",
-  },
-  {
-    id: 12,
-    category: "تدخلات الوقاية من المخاطر المعتدلة (متوسطة المخاطر)",
     text: "استخدام أحذية غير زلقة لإسعاف المرضى.",
     level: "متوسط المخاطر",
   },
 
-  // 13 to 18 (عالية المخاطر - High Risk Interventions)
+  // 12 to 17 (عالية المخاطر - High Risk Interventions)
   {
-    id: 13,
+    id: 12,
     category: "تدخلات عالية المخاطر",
     text: "استخدام الملابس ذات الحجم المناسب لمنع خطر التعثر.",
     level: "عالية المخاطر",
   },
   {
-    id: 14,
+    id: 13,
     category: "تدخلات عالية المخاطر",
     text: "تقييم الإضاءة الكافية، وترك أضواء الليل مفتوحة.",
     level: "عالية المخاطر",
   },
   {
-    id: 15,
+    id: 14,
     category: "تدخلات عالية المخاطر",
     text: "تطبيق احتياطات الوقاية من السقوط القياسية",
     level: "عالية المخاطر",
   },
   {
-    id: 16,
+    id: 15,
     category: "تدخلات عالية المخاطر",
     text: "تطبيق تدخلات الوقاية من المخاطر المعتدلة.",
     level: "عالية المخاطر",
   },
   {
-    id: 17,
+    id: 16,
     category: "تدخلات عالية المخاطر",
-    text: "ترك الباب مفتوحًا في جميع الأوقات ما لم تكن احتياطات العزل المحددة قيد الاستخدام.",
+    text: "ترك الباب مفتوحًا في جميع الأوقات .",
     level: "عالية المخاطر",
   },
   {
-    id: 18,
+    id: 17,
     category: "تدخلات عالية المخاطر",
-    text: "عمل مرور للمريض بصفة دورية كل ساعة.",
+    text: "ملاحظة المريض بصفة دورية.",
     level: "عالية المخاطر",
   },
 ];
@@ -268,23 +262,24 @@ function FallRiskPediatricContent() {
   }, [hasDirectHighRisk, totalScore]);
 
   // Dynamic procedures based on riskLevel:
-  // Low risk (منخفضة المخاطر) -> first 6
-  // Mid risk (متوسط المخاطر) -> first 12
-  // High risk (عالية المخاطر) -> all 18
+  // Low risk (منخفضة المخاطر) -> standard 6
+  // Mid risk (متوسط المخاطر) -> standard (6) + moderate (5) = 11
+  // High risk (عالية المخاطر) -> all 17
   const visibleProcedures = useMemo(() => {
     if (riskLevel === "عالية المخاطر" || hasDirectHighRisk) {
       return PEDIATRIC_FALL_PREVENTION_PROCEDURES;
     } else if (riskLevel === "متوسط المخاطر") {
-      return PEDIATRIC_FALL_PREVENTION_PROCEDURES.slice(0, 12);
+      return PEDIATRIC_FALL_PREVENTION_PROCEDURES.filter((p) => p.level !== "عالية المخاطر");
     } else {
-      return PEDIATRIC_FALL_PREVENTION_PROCEDURES.slice(0, 6);
+      return PEDIATRIC_FALL_PREVENTION_PROCEDURES.filter((p) => p.level === "منخفضة المخاطر");
     }
   }, [riskLevel, hasDirectHighRisk]);
 
   const [selectedProcedures, setSelectedProcedures] = useState<number[]>([]);
 
+  // User selects procedures manually (no auto-selection on high or other risks)
   useEffect(() => {
-    setSelectedProcedures(visibleProcedures.map((p) => p.id));
+    setSelectedProcedures((prev) => prev.filter((id) => visibleProcedures.some((p) => p.id === id)));
   }, [visibleProcedures]);
 
   // Load from editId or mrn if present
@@ -343,22 +338,35 @@ function FallRiskPediatricContent() {
         );
         if (hasDirectLoaded) {
           setAgeScore(data.age_score ?? null);
-          setDiagnosisScore(data.diagnosis_score ? data.diagnosis_score : null);
-          setEnvironmentalScore(data.environmental_score ? data.environmental_score : null);
-          setMedicationsScore(data.medications_score ? data.medications_score : null);
-          setCognitiveScore(data.cognitive_score ? data.cognitive_score : null);
-          setSurgeryScore(data.surgery_anesthesia_score ? data.surgery_anesthesia_score : null);
+          setDiagnosisScore(data.diagnosis_score !== undefined && data.diagnosis_score !== null ? data.diagnosis_score : null);
+          setEnvironmentalScore(data.environmental_score !== undefined && data.environmental_score !== null ? data.environmental_score : null);
+          setMedicationsScore(data.medications_score !== undefined && data.medications_score !== null ? data.medications_score : null);
+          setCognitiveScore(data.cognitive_score !== undefined && data.cognitive_score !== null ? data.cognitive_score : null);
+          setSurgeryScore(data.surgery_anesthesia_score !== undefined && data.surgery_anesthesia_score !== null ? data.surgery_anesthesia_score : null);
         } else {
           setAgeScore(data.age_score ?? 4);
-          setDiagnosisScore(data.diagnosis_score ?? 1);
-          setEnvironmentalScore(data.environmental_score ?? 1);
-          setMedicationsScore(data.medications_score ?? 1);
-          setCognitiveScore(data.cognitive_score ?? 1);
-          setSurgeryScore(data.surgery_anesthesia_score ?? 1);
+          setDiagnosisScore(data.diagnosis_score !== undefined && data.diagnosis_score !== null ? data.diagnosis_score : null);
+          setEnvironmentalScore(data.environmental_score !== undefined && data.environmental_score !== null ? data.environmental_score : null);
+          setMedicationsScore(data.medications_score !== undefined && data.medications_score !== null ? data.medications_score : null);
+          setCognitiveScore(data.cognitive_score !== undefined && data.cognitive_score !== null ? data.cognitive_score : null);
+          setSurgeryScore(data.surgery_anesthesia_score !== undefined && data.surgery_anesthesia_score !== null ? data.surgery_anesthesia_score : null);
         }
         setNurseSignature(data.nurse_signature || "");
         if (data.assessment_date) setAssessmentDate(data.assessment_date);
         if (data.assessment_time) setAssessmentTime(formatTime12(data.assessment_time));
+        if (data.submission_id) {
+          const { data: subData } = await supabase
+            .from("form_submissions")
+            .select("data")
+            .eq("id", data.submission_id)
+            .maybeSingle();
+          if (subData?.data?.procedures && Array.isArray(subData.data.procedures)) {
+            const loadedIds = PEDIATRIC_FALL_PREVENTION_PROCEDURES
+              .filter((p) => subData.data.procedures.includes(p.text))
+              .map((p) => p.id);
+            setSelectedProcedures(loadedIds);
+          }
+        }
         setIsLocked(true);
       }
     } catch (err: any) {
@@ -541,7 +549,7 @@ function FallRiskPediatricContent() {
         },
         total_score: totalScore ?? 0,
         risk_level: riskLevel,
-        procedures: visibleProcedures.map((p) => p.text),
+        procedures: visibleProcedures.filter((p) => selectedProcedures.includes(p.id)).map((p) => p.text),
         nurse_signature: effectiveNurseSig,
         assessment_date: assessmentDate,
         assessment_time: assessmentTime,
@@ -995,6 +1003,7 @@ function FallRiskPediatricContent() {
                   { score: 3, label: "أمراض تنفسية / مشاكل في الأكسجين / جفاف / إغماء / دوخة (3 نقاط)" },
                   { score: 2, label: "الاضطرابات النفسية أو السلوكية (2 نقطتان)" },
                   { score: 1, label: "تشخيصات أخرى (1 نقطة)" },
+                  { score: 0, label: "لا يوجد (0)" },
                 ].map((opt) => (
                   <button
                     key={opt.score}
@@ -1002,6 +1011,8 @@ function FallRiskPediatricContent() {
                     disabled={isLocked}
                     onClick={() => setDiagnosisScore(diagnosisScore === opt.score ? null : opt.score)}
                     className={`p-2.5 rounded-lg text-xs font-semibold text-right transition-all border ${
+                      opt.score === 0 ? "sm:col-span-2 text-center font-bold" : ""
+                    } ${
                       diagnosisScore === opt.score
                         ? "bg-[#1d8a98] text-white border-[#1d8a98] shadow-xs"
                         : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
@@ -1022,6 +1033,7 @@ function FallRiskPediatricContent() {
                   { score: 3, label: "المريض يستخدم أجهزة مساعدة (معدات / عكازات) (3 نقاط)" },
                   { score: 2, label: "المريض ملازم الفراش (2 نقطتان)" },
                   { score: 1, label: "مريض عيادات خارجية (1 نقطة)" },
+                  { score: 0, label: "لا يوجد (0)" },
                 ].map((opt) => (
                   <button
                     key={opt.score}
@@ -1029,6 +1041,8 @@ function FallRiskPediatricContent() {
                     disabled={isLocked}
                     onClick={() => setEnvironmentalScore(environmentalScore === opt.score ? null : opt.score)}
                     className={`p-2.5 rounded-lg text-xs font-semibold text-right transition-all border ${
+                      opt.score === 0 ? "sm:col-span-2 text-center font-bold" : ""
+                    } ${
                       environmentalScore === opt.score
                         ? "bg-[#1d8a98] text-white border-[#1d8a98] shadow-xs"
                         : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
@@ -1043,11 +1057,12 @@ function FallRiskPediatricContent() {
             {/* 4. Medications */}
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
               <label className="block font-bold text-slate-800">4. الأدوية المستخدمة (Medications):</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 {[
                   { score: 3, label: "أكثر من دواء من: منومات، مهدئات، مضادات اكتئاب، مدرات بول، مخدرات (3)" },
                   { score: 2, label: "دواء واحد من الأدوية السابقة فقط (2)" },
-                  { score: 1, label: "أدوية أخرى أو لا يستخدم أدوية (1)" },
+                  { score: 1, label: "أدوية أخرى (1)" },
+                  { score: 0, label: "لا يوجد (0)" },
                 ].map((opt) => (
                   <button
                     key={opt.score}
@@ -1075,13 +1090,14 @@ function FallRiskPediatricContent() {
                     { score: 3, label: "غير مدرك لحدود السرير (3)" },
                     { score: 2, label: "ينسى حدود السرير (2)" },
                     { score: 1, label: "يعتمد على قدرته الخاصة (1)" },
+                    { score: 0, label: "لا يوجد (0)" },
                   ].map((opt) => (
                     <button
                       key={opt.score}
                       type="button"
                       disabled={isLocked}
                       onClick={() => setCognitiveScore(cognitiveScore === opt.score ? null : opt.score)}
-                      className={`w-full p-2 rounded-lg text-xs font-semibold text-right transition-all border ${
+                      className={`w-full p-2.5 rounded-lg text-xs font-semibold text-right transition-all border ${
                         cognitiveScore === opt.score
                           ? "bg-[#1d8a98] text-white border-[#1d8a98] shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
@@ -1100,13 +1116,14 @@ function FallRiskPediatricContent() {
                     { score: 3, label: "في أول 24 ساعة من العملية أو التخدير (3)" },
                     { score: 2, label: "في أول 48 ساعة من العملية أو التخدير (2)" },
                     { score: 1, label: "أكثر من 72 ساعة من العملية أو التخدير (1)" },
+                    { score: 0, label: "لا يوجد (0)" },
                   ].map((opt) => (
                     <button
                       key={opt.score}
                       type="button"
                       disabled={isLocked}
                       onClick={() => setSurgeryScore(surgeryScore === opt.score ? null : opt.score)}
-                      className={`w-full p-2 rounded-lg text-xs font-semibold text-right transition-all border ${
+                      className={`w-full p-2.5 rounded-lg text-xs font-semibold text-right transition-all border ${
                         surgeryScore === opt.score
                           ? "bg-[#1d8a98] text-white border-[#1d8a98] shadow-xs"
                           : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
@@ -1155,8 +1172,8 @@ function FallRiskPediatricContent() {
                 {riskLevel === "منخفضة المخاطر"
                   ? "مستوى منخفض: عرض أول 6 إجراءات قياسية"
                   : riskLevel === "متوسط المخاطر"
-                  ? "مستوى متوسط: عرض أول 12 إجراء (القياسية + المعتدلة)"
-                  : "مستوى عالي: عرض كافة الإجراءات الـ 18 بالكامل"}
+                  ? `مستوى متوسط: عرض أول ${visibleProcedures.length} إجراء (القياسية + المعتدلة)`
+                  : `مستوى عالي: عرض كافة الإجراءات الـ ${PEDIATRIC_FALL_PREVENTION_PROCEDURES.length} بالكامل`}
               </p>
             </div>
 
@@ -1170,7 +1187,7 @@ function FallRiskPediatricContent() {
                     : "bg-emerald-100 text-emerald-800 border border-emerald-200"
                 }`}
               >
-                {visibleProcedures.length} إجراءات مطلوبة ({riskLevel})
+                {selectedProcedures.length} من {visibleProcedures.length} إجراءات محددة ({riskLevel})
               </span>
             </div>
           </div>
@@ -1189,9 +1206,9 @@ function FallRiskPediatricContent() {
                   }}
                   className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 select-none ${
                     isChecked
-                      ? proc.id <= 6
+                      ? proc.level === "منخفضة المخاطر"
                         ? "bg-emerald-50/60 border-emerald-300 text-emerald-950 shadow-xs"
-                        : proc.id <= 12
+                        : proc.level === "متوسط المخاطر"
                         ? "bg-amber-50/60 border-amber-300 text-amber-950 shadow-xs"
                         : "bg-rose-50/60 border-rose-300 text-rose-950 shadow-xs"
                       : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
@@ -1202,9 +1219,9 @@ function FallRiskPediatricContent() {
                     checked={isChecked}
                     readOnly
                     className={`w-4 h-4 rounded mt-0.5 pointer-events-none shrink-0 ${
-                      proc.id <= 6
+                      proc.level === "منخفضة المخاطر"
                         ? "accent-emerald-600"
-                        : proc.id <= 12
+                        : proc.level === "متوسط المخاطر"
                         ? "accent-amber-600"
                         : "accent-rose-600"
                     }`}
@@ -1435,28 +1452,28 @@ function FallRiskPediatricContent() {
             </tr>
             <tr>
               <td className="border border-black p-1 text-right">التشخيص (Diagnosis)</td>
-              <td className="border border-black p-1">1 - 4</td>
-              <td className="border border-black p-1 font-bold">{diagnosisScore}</td>
+              <td className="border border-black p-1">0 - 4</td>
+              <td className="border border-black p-1 font-bold">{diagnosisScore !== null && diagnosisScore !== undefined ? diagnosisScore : "-"}</td>
             </tr>
             <tr>
               <td className="border border-black p-1 text-right">العوامل البيئية (Environmental)</td>
-              <td className="border border-black p-1">1 - 4</td>
-              <td className="border border-black p-1 font-bold">{environmentalScore}</td>
+              <td className="border border-black p-1">0 - 4</td>
+              <td className="border border-black p-1 font-bold">{environmentalScore !== null && environmentalScore !== undefined ? environmentalScore : "-"}</td>
             </tr>
             <tr>
               <td className="border border-black p-1 text-right">الأدوية المستخدمة (Medications)</td>
-              <td className="border border-black p-1">1 - 3</td>
-              <td className="border border-black p-1 font-bold">{medicationsScore}</td>
+              <td className="border border-black p-1">0 - 3</td>
+              <td className="border border-black p-1 font-bold">{medicationsScore !== null && medicationsScore !== undefined ? medicationsScore : "-"}</td>
             </tr>
             <tr>
               <td className="border border-black p-1 text-right">مشاكل في الإدراك (Cognitive)</td>
-              <td className="border border-black p-1">1 - 3</td>
-              <td className="border border-black p-1 font-bold">{cognitiveScore}</td>
+              <td className="border border-black p-1">0 - 3</td>
+              <td className="border border-black p-1 font-bold">{cognitiveScore !== null && cognitiveScore !== undefined ? cognitiveScore : "-"}</td>
             </tr>
             <tr>
               <td className="border border-black p-1 text-right">عملية جراحية / تخدير (Surgery / Anesthesia)</td>
-              <td className="border border-black p-1">1 - 3</td>
-              <td className="border border-black p-1 font-bold">{surgeryScore}</td>
+              <td className="border border-black p-1">0 - 3</td>
+              <td className="border border-black p-1 font-bold">{surgeryScore !== null && surgeryScore !== undefined ? surgeryScore : "-"}</td>
             </tr>
             <tr className="bg-slate-100 font-bold">
               <td className="border border-black p-1 text-right">المجموع الكلي (Total Score)</td>
@@ -1547,7 +1564,7 @@ function FallRiskPediatricContent() {
           </thead>
           <tbody>
             {/* Category 1: Standard (Low Risk) */}
-            {visibleProcedures.filter((p) => p.id <= 6).length > 0 && (
+            {visibleProcedures.filter((p) => p.level === "منخفضة المخاطر").length > 0 && (
               <>
                 <tr className="bg-slate-200 font-bold text-[10px]">
                   <td colSpan={14} className="border border-black p-1 text-right">
@@ -1555,7 +1572,7 @@ function FallRiskPediatricContent() {
                   </td>
                 </tr>
                 {visibleProcedures
-                  .filter((p) => p.id <= 6)
+                  .filter((p) => p.level === "منخفضة المخاطر")
                   .map((proc) => (
                     <tr key={proc.id}>
                       <td className="border border-black p-1 text-right font-medium">
@@ -1580,7 +1597,7 @@ function FallRiskPediatricContent() {
             )}
 
             {/* Category 2: Moderate Risk (Shows for Mid Risk and High Risk) */}
-            {visibleProcedures.filter((p) => p.id >= 7 && p.id <= 12).length > 0 && (
+            {visibleProcedures.filter((p) => p.level === "متوسط المخاطر").length > 0 && (
               <>
                 <tr className="bg-slate-200 font-bold text-[10px]">
                   <td colSpan={14} className="border border-black p-1 text-right">
@@ -1588,7 +1605,7 @@ function FallRiskPediatricContent() {
                   </td>
                 </tr>
                 {visibleProcedures
-                  .filter((p) => p.id >= 7 && p.id <= 12)
+                  .filter((p) => p.level === "متوسط المخاطر")
                   .map((proc) => (
                     <tr key={proc.id}>
                       <td className="border border-black p-1 text-right font-medium">
@@ -1613,7 +1630,7 @@ function FallRiskPediatricContent() {
             )}
 
             {/* Category 3: High Risk (Shows ONLY for High Risk) */}
-            {visibleProcedures.filter((p) => p.id >= 13).length > 0 && (
+            {visibleProcedures.filter((p) => p.level === "عالية المخاطر").length > 0 && (
               <>
                 <tr className="bg-slate-200 font-bold text-[10px]">
                   <td colSpan={14} className="border border-black p-1 text-right">
@@ -1621,7 +1638,7 @@ function FallRiskPediatricContent() {
                   </td>
                 </tr>
                 {visibleProcedures
-                  .filter((p) => p.id >= 13)
+                  .filter((p) => p.level === "عالية المخاطر")
                   .map((proc) => (
                     <tr key={proc.id}>
                       <td className="border border-black p-1 text-right font-medium">

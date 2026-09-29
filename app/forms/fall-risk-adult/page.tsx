@@ -147,11 +147,9 @@ function FallRiskAdultContent() {
   const hasDirectHighRisk = Object.values(directFactors).some(Boolean);
   const isHighRisk = hasDirectHighRisk || totalScore >= 5;
 
-  // PDF Rule: When patient is high risk, automatically select all required protective interventions
+  // User selects protective interventions manually (no auto-selection on high risk)
   useEffect(() => {
-    if (isHighRisk) {
-      setSelectedInterventions(PROTECTIVE_INTERVENTIONS);
-    } else if (!editId) {
+    if (!isHighRisk && !editId) {
       setSelectedInterventions([]);
     }
   }, [isHighRisk, editId]);

@@ -282,15 +282,44 @@ export default function SubmissionPrintLayout({ submission }: SubmissionPrintLay
             </table>
           </div>
 
-          <PrintSignatureBlock
-            footerCode="TRC.MRS"
-            signatures={[
-              {
-                roleTitle: "توقيع مسؤول التثقيف الصحي / التمريض",
-                name: submission.educator_signature || submission.nurse_signature || submission.health_education_topic_entries?.[0]?.educator_name || "-",
-              },
-            ]}
-          />
+          {(() => {
+            const entries: any[] = submission.health_education_topic_entries || [];
+            const rawProc = (submission.procedure_name || submission.data?.procedure_name || "").toLowerCase();
+            const isRadio = rawProc.includes("echo") || rawProc.includes("u/s") || rawProc.includes("doppler") || rawProc.includes("سونار") || rawProc.includes("ايكو") || rawProc.includes("دوبلر");
+            const isTech = rawProc.includes("x-ray") || rawProc.includes("xray") || rawProc.includes("mri") || rawProc.includes("ct") || rawProc.includes("رنين") || rawProc.includes("مقطعية") || rawProc.includes("اشعة عادية");
+            const isOther = rawProc.includes("أخرى") || rawProc.includes("اخرى") || (!isRadio && !isTech);
+            const isBothOrOther = isOther || (isRadio && isTech);
+            const secondRoleTitle = isBothOrOther ? "الفني او الطبيب" : isRadio ? "طبيب الأشعة" : "فني الأشعة";
+
+            const nursePrefixes = ["تحضير", "التنبيه علي السيدة", "السقوط"];
+            const techPrefixes = ["المخاطر المحتملة", "بالصبغة", "تعليمات ما بعد الإجراء"];
+
+            const nurseTopic = entries.find((e: any) =>
+              nursePrefixes.some((p) => e.topic_name?.includes(p)) && e.educator_name?.trim()
+            );
+            const techTopic = entries.find((e: any) =>
+              techPrefixes.some((p) => e.topic_name?.includes(p)) && e.educator_name?.trim()
+            );
+
+            const nurseSig = nurseTopic?.educator_name || submission.educator_signature || submission.nurse_signature || (entries[0]?.educator_name || "-");
+            const techSig = techTopic?.educator_name || (entries.length > 3 ? entries[3]?.educator_name : null) || "-";
+
+            return (
+              <PrintSignatureBlock
+                footerCode="TRC.MRS"
+                signatures={[
+                  {
+                    roleTitle: "توقيع واعتماد التمريض (بنود 1-3)",
+                    name: nurseSig,
+                  },
+                  {
+                    roleTitle: `توقيع واعتماد ${secondRoleTitle} (بنود 4-6)`,
+                    name: techSig,
+                  },
+                ]}
+              />
+            );
+          })()}
         </div>
       )}
 

@@ -24,6 +24,7 @@ import {
   Stethoscope,
   Loader2,
   RotateCcw,
+  Check,
   Info as InfoIcon,
   ChevronDown,
 } from "lucide-react";
@@ -170,6 +171,7 @@ function PatientAssessmentContent() {
   const [selectedMedicalConditions, setSelectedMedicalConditions] = useState<string[]>([]);
   const [medicalConditionCustom, setMedicalConditionCustom] = useState<string>("");
   const [surgicalHistory, setSurgicalHistory] = useState<string>("");
+  const [hasSurgicalHistory, setHasSurgicalHistory] = useState<"يوجد" | "لا يوجد" | "">("");
 
   const MEDICAL_CONDITIONS = [
     "مرض ارتفاع ضغط الدم",
@@ -304,6 +306,29 @@ function PatientAssessmentContent() {
   const [pacemaker, setPacemaker] = useState(false);
   const [aneurysmClip, setAneurysmClip] = useState(false);
   const [immunocompromised, setImmunocompromised] = useState(false);
+  const [noMedicalReview, setNoMedicalReview] = useState(false);
+
+  const hasAnyMedicalCondition = Boolean(
+    kidneyDisease || heartDisease || anticoagulants || pacemaker || aneurysmClip || immunocompromised
+  );
+  const isNoMedicalActive = noMedicalReview && !hasAnyMedicalCondition;
+
+  const handleToggleNoMedicalReview = () => {
+    if (isNoMedicalActive) {
+      setNoMedicalReview(false);
+    } else {
+      setKidneyDisease(false);
+      setKidneyDetails("");
+      setHeartDisease(false);
+      setHeartDetails("");
+      setAnticoagulants(false);
+      setAnticoagulantDetails("");
+      setPacemaker(false);
+      setAneurysmClip(false);
+      setImmunocompromised(false);
+      setNoMedicalReview(true);
+    }
+  };
   const [psychologicalStatus, setPsychologicalStatus] = useState("طبيعية");
   const [mentalStatus, setMentalStatus] = useState("طبيعي");
   const [mentalDetails, setMentalDetails] = useState("");
@@ -311,27 +336,22 @@ function PatientAssessmentContent() {
   const [abuseDetails, setAbuseDetails] = useState("");
 
   // Plan of Care States (Page 2: Fall Risk, Page 3: Diagnostic Imaging)
-  const [fallCareInterventions, setFallCareInterventions] = useState<string[]>([
-    "تمييز المريض بوضع سلسلة عليها حرف F",
-    "رفع جوانب الترولي أو إمداد المريض بأجهزة المساعدة علي المشي مثل الكرسي المتحرك.",
-    "التأكد من احتياطات سلامة البيئة (جفاف الأرض،عدم وجود عوائق)",
-    "تثقيف المريض و / أو ذويه حول الاجراءات المانعة للسقوط",
-  ]);
+  const [fallCareInterventions, setFallCareInterventions] = useState<string[]>([]);
   const [fallCareResponsible, setFallCareResponsible] = useState<string[]>(["الممرضة"]);
-  const [fallCareTimeFrame, setFallCareTimeFrame] = useState<string>("5 دقائق");
+  const [fallCareTimeFrame, setFallCareTimeFrame] = useState<string>("");
   const [fallCareTimeFrameCustom, setFallCareTimeFrameCustom] = useState<string>("");
 
   // Doctor Care Plan (Image 1) - طبيب الأشعة / أخصائي الأشعة
   const [doctorCareInterventions, setDoctorCareInterventions] = useState<string[]>([]);
   const [doctorCareResponsible, setDoctorCareResponsible] = useState<string[]>(["أخصائي الأشعة"]);
-  const [doctorCareTimeFrame, setDoctorCareTimeFrame] = useState<string>("5 دقائق");
+  const [doctorCareTimeFrame, setDoctorCareTimeFrame] = useState<string>("");
   const [doctorCareTimeFrameCustom, setDoctorCareTimeFrameCustom] = useState<string>("");
   const [doctorConfirmedAt, setDoctorConfirmedAt] = useState<string | null>(null);
 
   // Technician Care Plan (Image 2) - فني الأشعة
   const [techCareInterventions, setTechCareInterventions] = useState<string[]>([]);
   const [techCareResponsible, setTechCareResponsible] = useState<string[]>(["فني الأشعة"]);
-  const [techCareTimeFrame, setTechCareTimeFrame] = useState<string>("5 دقائق");
+  const [techCareTimeFrame, setTechCareTimeFrame] = useState<string>("");
   const [techCareTimeFrameCustom, setTechCareTimeFrameCustom] = useState<string>("");
   const [techSignature, setTechSignature] = useState("");
   const [techConfirmedAt, setTechConfirmedAt] = useState<string | null>(null);
@@ -483,6 +503,7 @@ function PatientAssessmentContent() {
             surgPart = (rawHistory.split("التاريخ الجراحي:")[1] || "").trim();
           }
           setSurgicalHistory(surgPart);
+          setHasSurgicalHistory(surgPart.trim() ? "يوجد" : "لا يوجد");
           const parsedMed = parseMedicalConditions(medPart);
           setSelectedMedicalConditions(parsedMed.conditions);
           setMedicalConditionCustom(parsedMed.custom);
@@ -492,8 +513,10 @@ function PatientAssessmentContent() {
             setSelectedMedicalConditions(parsedMed.conditions);
             setMedicalConditionCustom(parsedMed.custom);
             setSurgicalHistory("");
+            setHasSurgicalHistory("لا يوجد");
           } else {
             setSurgicalHistory(rawHistory);
+            setHasSurgicalHistory(rawHistory.trim() ? "يوجد" : "لا يوجد");
             setSelectedMedicalConditions([]);
             setMedicalConditionCustom("");
           }
@@ -501,6 +524,7 @@ function PatientAssessmentContent() {
           setSelectedMedicalConditions([]);
           setMedicalConditionCustom("");
           setSurgicalHistory("");
+          setHasSurgicalHistory("");
         }
         setAllergyTypes(data.allergy_types || []);
         setAllergyDetails(data.allergy_details || "");
@@ -522,6 +546,15 @@ function PatientAssessmentContent() {
         setPacemaker(data.pacemaker || false);
         setAneurysmClip(data.aneurysm_clip || false);
         setImmunocompromised(data.immunocompromised || false);
+        const hadAnyCondition = Boolean(
+          data.kidney_disease ||
+          data.heart_disease ||
+          data.anticoagulants ||
+          data.pacemaker ||
+          data.aneurysm_clip ||
+          data.immunocompromised
+        );
+        setNoMedicalReview(!hadAnyCondition);
         setPsychologicalStatus(data.psychological_status || "طبيعية");
         if (data.mental_status?.startsWith("أخرى")) {
           setMentalStatus("أخرى");
@@ -546,7 +579,7 @@ function PatientAssessmentContent() {
                 setFallCareTimeFrameCustom(fallPlan.time_frame);
               }
             } else {
-              setFallCareTimeFrame("5 دقائق");
+              setFallCareTimeFrame("");
             }
           }
 
@@ -567,7 +600,7 @@ function PatientAssessmentContent() {
                 setDoctorCareTimeFrameCustom(docPlan.time_frame);
               }
             } else {
-              setDoctorCareTimeFrame("5 دقائق");
+              setDoctorCareTimeFrame("");
             }
             if (docPlan.confirmed_at) setDoctorConfirmedAt(docPlan.confirmed_at);
           }
@@ -592,7 +625,7 @@ function PatientAssessmentContent() {
                 setTechCareTimeFrameCustom(techPlan.time_frame);
               }
             } else {
-              setTechCareTimeFrame("5 دقائق");
+              setTechCareTimeFrame("");
             }
             if (techPlan.confirmed_by) {
               setTechSignature(techPlan.confirmed_by);
@@ -672,6 +705,7 @@ function PatientAssessmentContent() {
     setSelectedMedicalConditions([]);
     setMedicalConditionCustom("");
     setSurgicalHistory("");
+    setHasSurgicalHistory("");
     setAllergyTypes([]);
     setAllergyDetails("");
     setIsSmoker(null);
@@ -692,6 +726,7 @@ function PatientAssessmentContent() {
     setPacemaker(false);
     setAneurysmClip(false);
     setImmunocompromised(false);
+    setNoMedicalReview(false);
     setPsychologicalStatus("طبيعية");
     setMentalStatus("طبيعي");
     setMentalDetails("");
@@ -706,14 +741,18 @@ function PatientAssessmentContent() {
     setLabCreatinine("");
     setConnections([]);
     setMedications([]);
+    setFallCareInterventions([]);
+    setFallCareResponsible(["الممرضة"]);
+    setFallCareTimeFrame("");
+    setFallCareTimeFrameCustom("");
     setDoctorCareInterventions([]);
     setDoctorCareResponsible(["أخصائي الأشعة"]);
-    setDoctorCareTimeFrame("5 دقائق");
+    setDoctorCareTimeFrame("");
     setDoctorCareTimeFrameCustom("");
     setDoctorConfirmedAt(null);
     setTechCareInterventions([]);
     setTechCareResponsible(["فني الأشعة"]);
-    setTechCareTimeFrame("5 دقائق");
+    setTechCareTimeFrame("");
     setTechCareTimeFrameCustom("");
     setTechSignature("");
     setTechConfirmedAt(null);
@@ -1378,6 +1417,10 @@ function PatientAssessmentContent() {
     setDiagnosis("");
     setProcedureName("");
     setPastHistory("");
+    setSelectedMedicalConditions([]);
+    setMedicalConditionCustom("");
+    setSurgicalHistory("");
+    setHasSurgicalHistory("");
     setAllergyTypes([]);
     setAllergyDetails("");
     setIsSmoker(null);
@@ -1403,22 +1446,17 @@ function PatientAssessmentContent() {
     setMentalDetails("");
     setAbuseSigns(false);
     setAbuseDetails("");
-    setFallCareInterventions([
-      "تمييز المريض بوضع سلسلة عليها حرف F",
-      "رفع جوانب الترولي أو إمداد المريض بأجهزة المساعدة علي المشي مثل الكرسي المتحرك.",
-      "التأكد من احتياطات سلامة البيئة (جفاف الأرض،عدم وجود عوائق)",
-      "تثقيف المريض و / أو ذويه حول الاجراءات المانعة للسقوط",
-    ]);
+    setFallCareInterventions([]);
     setFallCareResponsible(["الممرضة"]);
-    setFallCareTimeFrame("5 دقائق");
+    setFallCareTimeFrame("");
     setFallCareTimeFrameCustom("");
     setDoctorCareInterventions([]);
-    setDoctorCareResponsible([]);
-    setDoctorCareTimeFrame("5 دقائق");
+    setDoctorCareResponsible(["أخصائي الأشعة"]);
+    setDoctorCareTimeFrame("");
     setDoctorCareTimeFrameCustom("");
     setTechCareInterventions([]);
-    setTechCareResponsible([]);
-    setTechCareTimeFrame("5 دقائق");
+    setTechCareResponsible(["فني الأشعة"]);
+    setTechCareTimeFrame("");
     setTechCareTimeFrameCustom("");
     setTechSignature("");
     setLabGfr("");
@@ -2175,25 +2213,95 @@ function PatientAssessmentContent() {
           </div>
 
           {/* حقل مستقل: التاريخ الجراحي (Surgical History) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              التاريخ الجراحي (Past Surgical History)
-              <span className="text-slate-400 font-normal mr-1.5">(اكتب العمليات والتدخلات الجراحية السابقة وتواريخها إن وجدت)</span>
-            </label>
-            <textarea
-              rows={2}
-              disabled={isNurseDisabled}
-              value={surgicalHistory}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSurgicalHistory(val);
-                setPastHistory(getCombinedHistory(selectedMedicalConditions, medicalConditionCustom, val));
-              }}
-              placeholder="اكتب العمليات الجراحية السابقة وتواريخها هنا..."
-              className={`w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs sm:text-sm outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 ${
-                isNurseDisabled ? "bg-slate-100 text-slate-600 cursor-not-allowed" : "bg-white"
-              }`}
-            />
+          <div className={`p-4 rounded-2xl border transition-all space-y-3 ${
+            hasSurgicalHistory === "يوجد"
+              ? "bg-indigo-50/40 border-indigo-200/90 shadow-xs"
+              : hasSurgicalHistory === "لا يوجد"
+              ? "bg-slate-50/80 border-slate-200/90 shadow-2xs"
+              : "bg-slate-50/70 border-slate-200/90 shadow-2xs"
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <label className="block text-xs sm:text-sm font-bold text-slate-800">
+                    التاريخ الجراحي (Past Surgical History)
+                  </label>
+                  {hasSurgicalHistory === "يوجد" && surgicalHistory.trim() && (
+                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-full">
+                      تم التدوين
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  هل خضع المريض لأي عمليات أو تدخلات جراحية سابقة؟
+                </p>
+              </div>
+
+              {/* أزرار يوجد / لا يوجد */}
+              <div className="inline-flex items-center gap-1.5 p-1 bg-white rounded-xl border border-slate-200/90 shadow-2xs">
+                <button
+                  type="button"
+                  disabled={isNurseDisabled}
+                  onClick={() => {
+                    setHasSurgicalHistory("لا يوجد");
+                    setSurgicalHistory("");
+                    setPastHistory(getCombinedHistory(selectedMedicalConditions, medicalConditionCustom, ""));
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    isNurseDisabled
+                      ? "opacity-60 cursor-not-allowed text-slate-400"
+                      : hasSurgicalHistory === "لا يوجد"
+                      ? "bg-slate-800 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${hasSurgicalHistory === "لا يوجد" ? "bg-white" : "bg-slate-300"}`} />
+                  <span>لا يوجد</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isNurseDisabled}
+                  onClick={() => {
+                    setHasSurgicalHistory("يوجد");
+                  }}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    isNurseDisabled
+                      ? "opacity-60 cursor-not-allowed text-slate-400"
+                      : hasSurgicalHistory === "يوجد"
+                      ? "bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-200"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${hasSurgicalHistory === "يوجد" ? "bg-white" : "bg-indigo-300"}`} />
+                  <span>يوجد</span>
+                </button>
+              </div>
+            </div>
+
+            {hasSurgicalHistory === "يوجد" && (
+              <div className="animate-in fade-in slide-in-from-top-1 duration-200 pt-1 space-y-1.5">
+                <label className="block text-[11px] font-bold text-indigo-950">
+                  اكتب العمليات الجراحية السابقة وتواريخها إن وجدت:
+                </label>
+                <textarea
+                  rows={2}
+                  disabled={isNurseDisabled}
+                  value={surgicalHistory}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSurgicalHistory(val);
+                    setPastHistory(getCombinedHistory(selectedMedicalConditions, medicalConditionCustom, val));
+                  }}
+                  placeholder="اكتب العمليات الجراحية السابقة وتواريخها هنا (مثال: استئصال الزائدة 2021)..."
+                  className={`w-full px-3.5 py-2.5 border rounded-xl text-xs sm:text-sm outline-none transition-all ${
+                    isNurseDisabled
+                      ? "bg-slate-100 text-slate-600 cursor-not-allowed border-slate-200"
+                      : "bg-white border-indigo-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-slate-800"
+                  }`}
+                  autoFocus
+                />
+              </div>
+            )}
           </div>
 
           {/* Allergy Matrix */}
@@ -2559,7 +2667,10 @@ function PatientAssessmentContent() {
                   type="checkbox"
                   disabled={isNurseDisabled}
                   checked={kidneyDisease}
-                  onChange={(e) => setKidneyDisease(e.target.checked)}
+                  onChange={(e) => {
+                    setKidneyDisease(e.target.checked);
+                    if (e.target.checked) setNoMedicalReview(false);
+                  }}
                   className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-indigo-600"}`}
                 />
               </label>
@@ -2588,7 +2699,10 @@ function PatientAssessmentContent() {
                   type="checkbox"
                   disabled={isNurseDisabled}
                   checked={heartDisease}
-                  onChange={(e) => setHeartDisease(e.target.checked)}
+                  onChange={(e) => {
+                    setHeartDisease(e.target.checked);
+                    if (e.target.checked) setNoMedicalReview(false);
+                  }}
                   className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-indigo-600"}`}
                 />
               </label>
@@ -2617,7 +2731,10 @@ function PatientAssessmentContent() {
                   type="checkbox"
                   disabled={isNurseDisabled}
                   checked={anticoagulants}
-                  onChange={(e) => setAnticoagulants(e.target.checked)}
+                  onChange={(e) => {
+                    setAnticoagulants(e.target.checked);
+                    if (e.target.checked) setNoMedicalReview(false);
+                  }}
                   className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-indigo-600"}`}
                 />
               </label>
@@ -2646,7 +2763,10 @@ function PatientAssessmentContent() {
                   type="checkbox"
                   disabled={isNurseDisabled}
                   checked={pacemaker}
-                  onChange={(e) => setPacemaker(e.target.checked)}
+                  onChange={(e) => {
+                    setPacemaker(e.target.checked);
+                    if (e.target.checked) setNoMedicalReview(false);
+                  }}
                   className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-rose-600"}`}
                 />
               </label>
@@ -2663,7 +2783,10 @@ function PatientAssessmentContent() {
                   type="checkbox"
                   disabled={isNurseDisabled}
                   checked={aneurysmClip}
-                  onChange={(e) => setAneurysmClip(e.target.checked)}
+                  onChange={(e) => {
+                    setAneurysmClip(e.target.checked);
+                    if (e.target.checked) setNoMedicalReview(false);
+                  }}
                   className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-rose-600"}`}
                 />
               </label>
@@ -2680,7 +2803,32 @@ function PatientAssessmentContent() {
                   type="checkbox"
                   disabled={isNurseDisabled}
                   checked={immunocompromised}
-                  onChange={(e) => setImmunocompromised(e.target.checked)}
+                  onChange={(e) => {
+                    setImmunocompromised(e.target.checked);
+                    if (e.target.checked) setNoMedicalReview(false);
+                  }}
+                  className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-indigo-600"}`}
+                />
+              </label>
+            </div>
+
+            {/* الخيار السابع أسفل القائمة: لا يوجد */}
+            <div className={`sm:col-span-2 p-3 rounded-xl border space-y-1.5 transition-colors ${
+              isNurseDisabled
+                ? "bg-slate-100/50 border-slate-200/70 text-slate-400"
+                : isNoMedicalActive
+                ? "bg-indigo-50/70 border-indigo-300"
+                : "bg-slate-50 border-slate-200"
+            }`}>
+              <label className={`flex items-center justify-between font-bold ${
+                isNurseDisabled ? "text-slate-700 cursor-not-allowed" : "text-slate-800 cursor-pointer"
+              }`}>
+                <span>لا يوجد</span>
+                <input
+                  type="checkbox"
+                  disabled={isNurseDisabled}
+                  checked={isNoMedicalActive}
+                  onChange={handleToggleNoMedicalReview}
                   className={`w-4 h-4 rounded ${isNurseDisabled ? "accent-slate-500 cursor-not-allowed" : "accent-indigo-600"}`}
                 />
               </label>
@@ -3331,27 +3479,9 @@ function PatientAssessmentContent() {
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className={`block font-bold ${isRadiologistDisabled ? "text-slate-700" : "text-slate-800"}`}>
-                      التدخلات أو الإجراءات (Interventions):
-                    </label>
-                    {canEditRadiologist && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDoctorCareInterventions([
-                            "التأكد من تثقيف المريض علي اجراءات ما قبل الفحص",
-                            "تعريف المريض بفوائد ومخاطر وبدائل الاجراء",
-                          ]);
-                          setDoctorCareResponsible(["أخصائي الأشعة"]);
-                          setDoctorCareTimeFrame("5 دقائق");
-                        }}
-                        className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>⚡ تحديد التدخلات القياسية لطبيب الأشعة</span>
-                      </button>
-                    )}
-                  </div>
+                  <label className={`block font-bold mb-1.5 ${isRadiologistDisabled ? "text-slate-700" : "text-slate-800"}`}>
+                    التدخلات أو الإجراءات (Interventions):
+                  </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {[
                       "التأكد من تثقيف المريض علي اجراءات ما قبل الفحص",
@@ -3532,31 +3662,9 @@ function PatientAssessmentContent() {
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className={`block font-bold ${isTechDisabled ? "text-slate-700" : "text-slate-800"}`}>
-                      التدخلات أو الإجراءات (Interventions):
-                    </label>
-                    {canEditTech && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTechCareInterventions([
-                            "حساب جرعة الإشعاع المناسب للمريض و الإجراء",
-                            "توفير الوسائل اللازمة لحماية المريض اثناء تلقي الاجراء",
-                            "تأمين المريض اثناء الاجراء",
-                            "الحفاظ علي خصوصية المريض أثناء تلقي الاجراء",
-                            "اتباع دليل الاجراءات لفحص الأشعة",
-                            "تثقيف المريض علي تعليمات ما بعد الفحص",
-                          ]);
-                          setTechCareResponsible(["فني الأشعة"]);
-                          setTechCareTimeFrame("5 دقائق");
-                        }}
-                        className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>⚡ تحديد كافة التدخلات القياسية لفني الأشعة</span>
-                      </button>
-                    )}
-                  </div>
+                  <label className={`block font-bold mb-1.5 ${isTechDisabled ? "text-slate-700" : "text-slate-800"}`}>
+                    التدخلات أو الإجراءات (Interventions):
+                  </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {[
                       "حساب جرعة الإشعاع المناسب للمريض و الإجراء",

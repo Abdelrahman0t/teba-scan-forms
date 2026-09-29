@@ -306,29 +306,22 @@ function PatientTransferContent() {
     }
   }, [totalRstpScore]);
 
-  const hasDoctorSubmitted = Boolean(
-    editId && (
-      (receivingPhysicianSignature && receivingPhysicianSignature.trim() && receivingPhysicianSignature !== "-") ||
-      (totalRstpScore > 0)
-    )
-  );
-  const hasNurseSubmitted = Boolean(
-    editId && (
-      receivingNurseSignature && receivingNurseSignature.trim() && receivingNurseSignature !== "-"
-    )
-  );
-  const isModelComplete = Boolean(editId && hasDoctorSubmitted && hasNurseSubmitted);
+  const [dbDoctorSigned, setDbDoctorSigned] = useState(false);
+  const [dbNurseSigned, setDbNurseSigned] = useState(false);
 
-  const canEditRadiologist = !hasDoctorSubmitted && (isAdmin || role === "radiologist");
-  const canEditNurse = !hasNurseSubmitted && (isAdmin || role === "nurse");
+  const canEditRadiologist = isAdmin || role === "radiologist";
+  const canEditNurse = isAdmin || role === "nurse";
   const isNurse = role === "nurse" && !isAdmin;
   const isRadiologist = role === "radiologist" || isAdmin;
-  const isDoctorDisabled = isLocked || isModelComplete || hasDoctorSubmitted || !canEditRadiologist;
-  const isNurseChecklistDisabled = isLocked || isModelComplete || hasNurseSubmitted || !canEditNurse;
+  const isAuthorizedRole = isAdmin || role === "radiologist" || role === "nurse";
+
+  const isModelComplete = Boolean(editId && dbDoctorSigned && dbNurseSigned);
+  const isDoctorDisabled = isLocked || !canEditRadiologist || (Boolean(editId && dbDoctorSigned) && !isAdmin);
+  const isNurseChecklistDisabled = isLocked || !canEditNurse;
   const isTransferInitiated = Boolean(editId && (receivingPhysicianSignature || totalRstpScore > 0));
 
   // Load from editId or mrn if present
-  // Wait for auth to resolve so canEditRadiologist reflects the real role
+  // Wait for auth to resolve so role permissions reflect the real user
   useEffect(() => {
     if (authLoading) return;
     const id = searchParams.get("editId");
@@ -342,7 +335,7 @@ function PatientTransferContent() {
       if (nameParam) setPatientName(nameParam);
       searchPatientByMrn(mrnParam);
     }
-  }, [searchParams, authLoading]);
+  }, [searchParams, authLoading, role, isAdmin]);
 
   async function loadRecordForEdit(id: string) {
     setLoading(true);
@@ -412,9 +405,20 @@ function PatientTransferContent() {
         if (data.safety_checklist) setSafetyChecklist(data.safety_checklist);
         if (data.required_exams) setRequiredExams(data.required_exams);
         if (data.other_exam) setOtherExam(data.other_exam);
-        const hasDoc = Boolean(data.receiving_physician_signature || data.doctor_signature || (data.total_rstp_score !== null && data.total_rstp_score !== undefined));
-        const hasNur = Boolean(data.receiving_nurse_signature && data.receiving_nurse_signature !== "-");
-        setIsLocked(hasDoc && hasNur);
+        const hasDoc = Boolean(
+          (data.receiving_physician_signature && data.receiving_physician_signature.trim() && data.receiving_physician_signature !== "-") ||
+          (data.doctor_signature && data.doctor_signature.trim() && data.doctor_signature !== "-") ||
+          (data.total_rstp_score !== null && data.total_rstp_score !== undefined && data.total_rstp_score > 0)
+        );
+        const hasNur = Boolean(
+          data.receiving_nurse_signature && data.receiving_nurse_signature.trim() && data.receiving_nurse_signature !== "-"
+        );
+        setDbDoctorSigned(hasDoc);
+        setDbNurseSigned(hasNur);
+
+        const isUserAuthorized = isAdmin || role === "radiologist" || role === "nurse";
+        const modelDone = hasDoc && hasNur;
+        setIsLocked(!isUserAuthorized || (modelDone && !isAdmin));
       }
     } catch (err: any) {
       setErrorMsg("تعذر تحميل بيانات النقل للتعديل: " + err.message);
@@ -812,6 +816,8 @@ function PatientTransferContent() {
   function handleNewForm() {
     setLastSavedRecord(null);
     setIsLocked(false);
+    setDbDoctorSigned(false);
+    setDbNurseSigned(false);
     setEditId(null);
     setMrn("");
     setPatientName("");

@@ -424,25 +424,68 @@ export default function SubmissionDetailModal({
               </div>
 
               {/* Signatures & Time */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3.5 rounded-2xl border">
-                <div>
-                  <span className="text-slate-400 block text-[11px]">مسؤول التثقيف الصحي:</span>
-                  <strong className="text-slate-900">
-                    {submission.educator_signature || submission.nurse_signature || submission.health_education_topic_entries?.[0]?.educator_name || "-"}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[11px]">تاريخ ووقت التثقيف:</span>
-                  <strong className="font-mono">
-                    {submission.education_date || (submission.created_at ? submission.created_at.split("T")[0] : "-")}
-                    {submission.education_time
-                      ? ` (${formatTime12(submission.education_time)})`
-                      : submission.created_at && submission.created_at.includes("T")
-                      ? ` (${formatTime12(submission.created_at.split("T")[1].slice(0, 5))})`
-                      : ""}
-                  </strong>
-                </div>
-              </div>
+              {(() => {
+                const entries: any[] = submission.health_education_topic_entries || [];
+                const rawProc = (submission.procedure_name || submission.data?.procedure_name || "").toLowerCase();
+                const isRadio = rawProc.includes("echo") || rawProc.includes("u/s") || rawProc.includes("doppler") || rawProc.includes("سونار") || rawProc.includes("ايكو") || rawProc.includes("دوبلر");
+                const isTech = rawProc.includes("x-ray") || rawProc.includes("xray") || rawProc.includes("mri") || rawProc.includes("ct") || rawProc.includes("رنين") || rawProc.includes("مقطعية") || rawProc.includes("اشعة عادية");
+                const isOther = rawProc.includes("أخرى") || rawProc.includes("اخرى") || (!isRadio && !isTech);
+                const isBothOrOther = isOther || (isRadio && isTech);
+                const secondRoleTitle = isBothOrOther ? "الفني او الطبيب" : isRadio ? "طبيب الأشعة" : "فني الأشعة";
+
+                const nursePrefixes = ["تحضير", "التنبيه علي السيدة", "السقوط"];
+                const secondRolePrefixes = ["المخاطر المحتملة", "بالصبغة", "تعليمات ما بعد الإجراء"];
+
+                const nurseTopic = entries.find((e: any) =>
+                  nursePrefixes.some((p) => e.topic_name?.includes(p)) && e.educator_name?.trim()
+                );
+                const secondRoleTopic = entries.find((e: any) =>
+                  secondRolePrefixes.some((p) => e.topic_name?.includes(p)) && e.educator_name?.trim()
+                );
+
+                const nurseEducator = nurseTopic?.educator_name || submission.educator_signature || submission.nurse_signature || (entries[0]?.educator_name || "-");
+                const secondRoleEducator = secondRoleTopic?.educator_name || (entries.length > 3 ? entries[3]?.educator_name : null);
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-3.5 rounded-2xl border">
+                    <div>
+                      <span className="text-slate-400 block text-[11px] font-bold">اعتماد التمريض (بنود 1-3):</span>
+                      <strong className="text-slate-900 text-xs sm:text-sm flex items-center gap-1.5 mt-0.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>{nurseEducator}</span>
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 block text-[11px] font-bold">اعتماد {secondRoleTitle} (بنود 4-6):</span>
+                      <strong className={`text-xs sm:text-sm flex items-center gap-1.5 mt-0.5 ${secondRoleEducator ? "text-slate-900" : "text-amber-600"}`}>
+                        {secondRoleEducator ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                            <span>{secondRoleEducator}</span>
+                          </>
+                        ) : (
+                          <span className="bg-amber-50 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-200">
+                            بانتظار {secondRoleTitle}
+                          </span>
+                        )}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 block text-[11px] font-bold">تاريخ ووقت التثقيف:</span>
+                      <strong className="font-mono text-xs sm:text-sm text-slate-800 block mt-0.5">
+                        {submission.education_date || (submission.created_at ? submission.created_at.split("T")[0] : "-")}
+                        {submission.education_time
+                          ? ` (${formatTime12(submission.education_time)})`
+                          : submission.created_at && submission.created_at.includes("T")
+                          ? ` (${formatTime12(submission.created_at.split("T")[1].slice(0, 5))})`
+                          : ""}
+                      </strong>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
