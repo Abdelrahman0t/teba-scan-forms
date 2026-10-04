@@ -448,14 +448,6 @@ export default function Sidebar({ collapsed: propCollapsed, onToggleCollapse }: 
                     </div>
                     {(!collapsed || mobileOpen) && (
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {counts.formCounts[f.href] !== undefined && (
-                          <span
-                            className="text-[9px] font-mono text-purple-300/60 bg-white/5 px-1.5 py-0.2 rounded-full"
-                            title={`إجمالي المسجل: ${counts.formCounts[f.href]}`}
-                          >
-                            {counts.formCounts[f.href]}
-                          </span>
-                        )}
                         <Lock className="w-3 h-3 text-purple-300/60" />
                         <span className="text-[9px] font-mono text-purple-300/40 bg-[#16041b]/60 px-1 py-0.2 rounded border border-purple-900/30">
                           {f.code}
@@ -484,23 +476,9 @@ export default function Sidebar({ collapsed: propCollapsed, onToggleCollapse }: 
                     )}
                   </div>
                   {(!collapsed || mobileOpen) && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {counts.formCounts[f.href] !== undefined && (
-                        <span
-                          className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full font-bold transition-colors ${
-                            isActive
-                              ? "bg-white/25 text-white"
-                              : "bg-white/10 text-purple-200 group-hover:bg-white/20"
-                          }`}
-                          title={`إجمالي النماذج الموثقة: ${counts.formCounts[f.href]}`}
-                        >
-                          {counts.formCounts[f.href]}
-                        </span>
-                      )}
-                      <span className="text-[9px] font-mono text-purple-300/70 bg-[#16041b] px-1 py-0.2 rounded">
-                        {f.code}
-                      </span>
-                    </div>
+                    <span className="text-[9px] font-mono text-purple-300/70 bg-[#16041b] px-1 py-0.2 rounded shrink-0">
+                      {f.code}
+                    </span>
                   )}
                 </Link>
               );
