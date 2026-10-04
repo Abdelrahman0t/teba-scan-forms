@@ -27,6 +27,8 @@ import { getFormStatusInfo } from "@/lib/formStatus";
 import { useFormSync } from "@/lib/syncEvents";
 import SubmissionDetailModal from "@/components/submissions/SubmissionDetailModal";
 
+import { fetchExactClinicalCounts } from "@/lib/clinicalCounts";
+
 export default function Home() {
   const supabase = createClient();
   const router = useRouter();
@@ -39,6 +41,7 @@ export default function Home() {
     pendingMyRole: 0,
   });
 
+  const [formCounts, setFormCounts] = useState<Record<string, number>>({});
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
 
@@ -63,9 +66,8 @@ export default function Home() {
 
   async function loadDashboardData() {
     try {
-      const todayStr = new Date().toISOString().split("T")[0];
-
       const [
+        exactCounts,
         radsRes,
         edusRes,
         fallScreenRes,
@@ -75,14 +77,15 @@ export default function Home() {
         transRes,
         patientsRes,
       ] = await Promise.all([
-        supabase.from("radiation_exposure_logs").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("fall_risk_screenings").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("fall_risk_adult_assessments").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("fall_risk_pediatric_assessments").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("patient_assessments").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("patient_transfers").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("patients").select("id, full_name, mrn, age, gender").limit(200),
+        fetchExactClinicalCounts(supabase),
+        supabase.from("radiation_exposure_logs").select("*").order("created_at", { ascending: false }),
+        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").order("created_at", { ascending: false }),
+        supabase.from("fall_risk_screenings").select("*").order("created_at", { ascending: false }),
+        supabase.from("fall_risk_adult_assessments").select("*").order("created_at", { ascending: false }),
+        supabase.from("fall_risk_pediatric_assessments").select("*").order("created_at", { ascending: false }),
+        supabase.from("patient_assessments").select("*").order("created_at", { ascending: false }),
+        supabase.from("patient_transfers").select("*").order("created_at", { ascending: false }),
+        supabase.from("patients").select("id, full_name, mrn, age, gender"),
       ]);
 
       const patientMap = new Map((patientsRes.data || []).map((p: any) => [p.id, p]));
@@ -112,24 +115,19 @@ export default function Home() {
         ...(transRes.data || []).map((t) => formatItem(t, "transfer", "نقل المريض", "text-sky-600 bg-sky-50", "/forms/patient-transfer")),
       ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      // Calculate total & today
-      const todayCount = allRecent.filter((item) => {
-        const createdDate = item.created_at ? new Date(item.created_at).toISOString().split("T")[0] : "";
-        return createdDate === todayStr;
-      }).length;
-
       const myPending = allRecent.filter((item) => {
         const s = getFormStatusInfo(item);
         return !s.isComplete && (isAdmin || (role && (s.missingRoles as string[]).includes(role)));
       }).length;
 
       setStats({
-        totalSubmissions: allRecent.length,
-        todaySubmissions: todayCount,
-        patientsCount: patientsRes.data?.length || 0,
+        totalSubmissions: exactCounts.totalSubmissions,
+        todaySubmissions: exactCounts.todaySubmissions,
+        patientsCount: exactCounts.patients,
         pendingMyRole: myPending,
       });
 
+      setFormCounts(exactCounts.byFormId);
       setRecentActivities(allRecent.slice(0, 6));
     } catch (err) {
       console.error("Dashboard stats error:", err);
@@ -432,9 +430,16 @@ export default function Home() {
                     <div className="p-3 rounded-2xl border bg-purple-50/80 text-[#621c6f] border-purple-100 group-hover:bg-[#621c6f] group-hover:text-white transition-all duration-200">
                       <Icon className="w-5 h-5" />
                     </div>
-                    <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded border border-purple-200 bg-purple-50/60 text-[#481454]">
-                      {form.code}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {formCounts[form.id] !== undefined && (
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 text-[#481454]">
+                          {formCounts[form.id]} سجل
+                        </span>
+                      )}
+                      <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded border border-purple-200 bg-purple-50/60 text-[#481454]">
+                        {form.code}
+                      </span>
+                    </div>
                   </div>
 
                   <div>

@@ -80,13 +80,12 @@ export default function SubmissionsPage() {
     if (!silent) setLoading(true);
     const startDate = getStartDate(dateRange);
 
-    /** Builds a query with a server-side date filter + row limit applied. */
+    /** Builds a query with a server-side date filter applied. */
     function buildQuery(table: string, selectStr: string): Promise<{ data: any[] | null; error: any }> {
       let q: any = supabase
         .from(table as any)
         .select(selectStr)
-        .order("created_at", { ascending: false })
-        .limit(100);
+        .order("created_at", { ascending: false });
       if (startDate) q = q.gte("created_at", startDate);
       return q;
     }
@@ -356,7 +355,7 @@ export default function SubmissionsPage() {
           </button>
         ))}
         <span className="text-[11px] text-slate-400 mr-auto">
-          • عرض آخر 100 سجل لكل نوع نموذج {dateRange === "all" ? "من كل الوقت" : "ضمن الفترة المحددة"}
+          • عرض كافة السجلات الموثقة {dateRange === "all" ? "من كل الوقت" : "ضمن الفترة المحددة"}
         </span>
       </div>
 
