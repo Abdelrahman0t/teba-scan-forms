@@ -96,7 +96,7 @@ export default function PatientsPage() {
   const { role, isAdmin, loading: authLoading } = useUser();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [patients, setPatients] = useState<PatientWithActivity[]>([]);
   const [cursor, setCursor] = useState<KeysetCursor | null>(null);
   const [totalPatients, setTotalPatients] = useState(0);
@@ -115,13 +115,13 @@ export default function PatientsPage() {
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
 
   const loading = loadedSearch === null;
-  const fetching = !loading && loadedSearch !== debouncedSearch;
+  const fetching = !loading && loadedSearch !== appliedSearch;
 
   // Latest values for the live-sync callback (kept in sync after each render)
-  const liveRef = useRef({ expandedPatientId, patients, search: debouncedSearch });
+  const liveRef = useRef({ expandedPatientId, patients, search: appliedSearch });
   useEffect(() => {
-    liveRef.current = { expandedPatientId, patients, search: debouncedSearch };
-  }, [expandedPatientId, patients, debouncedSearch]);
+    liveRef.current = { expandedPatientId, patients, search: appliedSearch };
+  }, [expandedPatientId, patients, appliedSearch]);
 
   // Every reload bumps the sequence; responses for an older search are dropped.
   const requestSeq = useRef(0);
@@ -134,11 +134,7 @@ export default function PatientsPage() {
     }
   }, [role, isAdmin, authLoading, router]);
 
-  // Debounce search so the database is queried once the user pauses typing
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
+  const submitSearch = () => setAppliedSearch(searchQuery.trim());
 
   /** Loads the first page; `limit` is raised by live refreshes so loaded pages don't collapse. */
   const fetchPatients = useCallback(async (search: string, limit = RECORDS_PAGE_SIZE) => {
@@ -167,7 +163,7 @@ export default function PatientsPage() {
     const seq = requestSeq.current;
     setLoadingMore(true);
     try {
-      const page = await fetchPatientsPage(supabase, debouncedSearch, { cursor });
+      const page = await fetchPatientsPage(supabase, appliedSearch, { cursor });
       if (seq !== requestSeq.current) return;
       setPatients((prev) => appendUnique(prev, page.rows, (p) => p.id));
       setCursor(page.nextCursor);
@@ -180,8 +176,8 @@ export default function PatientsPage() {
   }
 
   useEffect(() => {
-    fetchPatients(debouncedSearch);
-  }, [debouncedSearch, fetchPatients]);
+    fetchPatients(appliedSearch);
+  }, [appliedSearch, fetchPatients]);
 
   async function fetchPatientTimelineData(patient: any, silent = false) {
     const seq = ++timelineSeq.current;
@@ -256,25 +252,39 @@ export default function PatientsPage() {
 
         <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-200">
           <Sparkles className="w-4 h-4 text-[#621c6f]" />
-          <span>{debouncedSearch ? "نتائج البحث" : "إجمالي المرضى"}: <strong className="text-slate-900 font-mono text-sm">{totalPatients}</strong></span>
+          <span>{appliedSearch ? "نتائج البحث" : "إجمالي المرضى"}: <strong className="text-slate-900 font-mono text-sm">{totalPatients}</strong></span>
         </div>
       </div>
 
-      {/* Instant Search Bar */}
-      <div className="relative bg-white p-3 rounded-2xl shadow-xs border border-slate-200/80 no-print">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="ابحث باسم المريض رباعي أو برقم الملف الطبي (MRN)..."
-          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#621c6f] outline-none text-xs sm:text-sm transition-all"
-        />
-        {fetching && !loading ? (
-          <Loader2 className="w-4 h-4 absolute left-6 top-5.5 text-[#621c6f] animate-spin" />
-        ) : (
-          <Search className="w-4 h-4 absolute left-6 top-5.5 text-slate-400" />
-        )}
-      </div>
+      {/* Search — only runs after بحث / Enter, not while typing */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitSearch();
+        }}
+        className="flex items-center gap-2 bg-white p-3 rounded-2xl shadow-xs border border-slate-200/80 no-print"
+      >
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="ابحث باسم المريض رباعي أو برقم الملف الطبي (MRN)..."
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#621c6f] outline-none text-xs sm:text-sm transition-all"
+          />
+          {fetching && !loading ? (
+            <Loader2 className="w-4 h-4 absolute left-3.5 top-3.5 text-[#621c6f] animate-spin" />
+          ) : (
+            <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400" />
+          )}
+        </div>
+        <button
+          type="submit"
+          className="shrink-0 px-5 py-2.5 rounded-xl bg-[#621c6f] text-white text-xs sm:text-sm font-bold hover:bg-[#481454] transition-all"
+        >
+          بحث
+        </button>
+      </form>
 
       {/* Patient Cards List */}
       {error ? (
