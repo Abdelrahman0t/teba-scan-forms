@@ -40,12 +40,12 @@ export function notifyFormSubmission(details?: { formType?: string; patientId?: 
   // 2. Storage event fallback for older browsers or restricted tab environments
   try {
     localStorage.setItem(FORM_SYNC_CHANNEL_NAME, JSON.stringify(payload));
-  } catch (e) {}
+  } catch (e) { }
 
   // 3. CustomEvent for the current window/tab (e.g. modals, drawer forms)
   try {
     window.dispatchEvent(new CustomEvent(FORM_SYNC_CHANNEL_NAME, { detail: payload }));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 /** Alias for notifyFormSubmission */
@@ -107,7 +107,7 @@ export function useFormSync(onSync: (payload?: SyncPayload) => void, enabled: bo
         try {
           const data = JSON.parse(e.newValue);
           triggerSync(data);
-        } catch (err) {}
+        } catch (err) { }
       }
     };
     window.addEventListener("storage", handleStorage);
@@ -168,7 +168,7 @@ export function useFormSync(onSync: (payload?: SyncPayload) => void, enabled: bo
       if (bc) {
         try {
           bc.close();
-        } catch (e) {}
+        } catch (e) { }
       }
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener(FORM_SYNC_CHANNEL_NAME, handleCustomEvent);

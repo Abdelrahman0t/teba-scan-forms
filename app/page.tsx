@@ -211,15 +211,15 @@ export default function Home() {
   const visibleForms = isAdmin
     ? formsList
     : role
-    ? formsList.filter((f) => f.roles.includes(role))
-    : formsList;
+      ? formsList.filter((f) => f.roles.includes(role))
+      : formsList;
 
   return (
     <div className="space-y-8">
       {/* Hero Welcome Banner with Tiba Scan Official Brand */}
       <div className="relative overflow-hidden bg-gradient-to-r from-[#2c0b36] via-[#481454] to-[#2c0b36] text-white p-6 sm:p-8 rounded-3xl shadow-xl border border-purple-900/50">
         <div className="relative z-10 max-w-3xl space-y-4">
-          
+
           <div className="flex items-center gap-3.5">
             <div className="w-14 h-14 rounded-2xl bg-white p-1 shadow-lg border border-purple-200/40 flex items-center justify-center shrink-0">
               <img
@@ -305,11 +305,10 @@ export default function Home() {
           <span className="text-[10px] text-slate-400 block mt-1">خلال الوردية الحالية</span>
         </div>
 
-        <div className={`p-5 rounded-2xl shadow-xs border transition-all ${
-          stats.pendingMyRole > 0
+        <div className={`p-5 rounded-2xl shadow-xs border transition-all ${stats.pendingMyRole > 0
             ? "bg-amber-50/60 border-amber-300"
             : "bg-white border-purple-100"
-        }`}>
+          }`}>
           <div className="flex justify-between items-center mb-2">
             <span className="text-xs font-bold text-amber-900">بانتظار دورك</span>
             <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">

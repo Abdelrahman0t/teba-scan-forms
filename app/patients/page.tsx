@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -28,12 +28,24 @@ import {
   Plus,
   Filter,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { formatTime12 } from "@/lib/timeUtils";
-import { buildPatientSearchFilter } from "@/lib/numberUtils";
 import { useUser, UserRole } from "@/lib/supabase/auth";
-import { useFormSync, notifyFormSubmission } from "@/lib/syncEvents";
+import { useFormSync } from "@/lib/syncEvents";
 import { getFormStatusInfo } from "@/lib/formStatus";
+import {
+  RECORDS_PAGE_SIZE,
+  ClinicalFormType,
+  ClinicalRecordRow,
+  KeysetCursor,
+  MissingMigrationError,
+  PatientWithActivity,
+  appendUnique,
+  fetchClinicalRecordsPage,
+  fetchPatientsPage,
+  normalizeRecordData,
+} from "@/lib/clinicalRecords";
 import SubmissionDetailModal from "@/components/submissions/SubmissionDetailModal";
 import SubmissionPrintLayout from "@/components/submissions/SubmissionPrintLayout";
 
@@ -47,14 +59,51 @@ type TimelineCategory =
   | "radiation"
   | "education";
 
+const TIMELINE_META: Record<ClinicalFormType, { name: string; headerCode: string; editUrl: string; icon: any; color: string }> = {
+  radiation: { name: "تسجيل جرعات الأشعة", headerCode: "TRC.MRS", editUrl: "/forms/radiation-exposure", icon: Activity, color: "text-sky-600 bg-sky-50" },
+  education: { name: "التثقيف الصحي للمريض والأسرة", headerCode: "TRC.MRS", editUrl: "/forms/patient-education", icon: HeartPulse, color: "text-emerald-600 bg-emerald-50" },
+  fall_screen: { name: "المسح المبدئي لخطر السقوط", headerCode: "TRC.MRS", editUrl: "/forms/fall-risk-screening", icon: ShieldAlert, color: "text-amber-600 bg-amber-50" },
+  fall_adult: { name: "تقييم مخاطر السقوط للكبار (Hendrich II)", headerCode: "TRC-ICD", editUrl: "/forms/fall-risk-adult", icon: ShieldAlert, color: "text-rose-600 bg-rose-50" },
+  fall_ped: { name: "مقياس مخاطر سقوط الأطفال (Humpty Dumpty)", headerCode: "TRC.ICD", editUrl: "/forms/fall-risk-pediatric", icon: Baby, color: "text-cyan-600 bg-cyan-50" },
+  assessment: { name: "نموذج تقييم المريض الشامل", headerCode: "TRC-ICD", editUrl: "/forms/patient-assessment", icon: ClipboardCheck, color: "text-indigo-600 bg-indigo-50" },
+  transfer: { name: "نموذج نقل المريض (RSTP)", headerCode: "TRC.ACT", editUrl: "/forms/patient-transfer", icon: Ambulance, color: "text-blue-600 bg-blue-50" },
+};
+
+// A single patient's full history is small; load it in one call.
+const TIMELINE_LIMIT = 1000;
+
+function toTimelineItem(row: ClinicalRecordRow, patient: any) {
+  const meta = TIMELINE_META[row.formType];
+  return {
+    ...normalizeRecordData(row.formType, row.record),
+    formType: row.formType,
+    formTypeName: meta.name,
+    category: row.formType as TimelineCategory,
+    headerCode: meta.headerCode,
+    editUrl: `${meta.editUrl}?editId=${row.id}`,
+    icon: meta.icon,
+    color: meta.color,
+    resolvedPatientName: patient.full_name || row.patient?.full_name,
+    resolvedMrn: patient.mrn || row.patient?.mrn,
+    resolvedGender: patient.gender || row.patient?.gender || "-",
+    resolvedAge: patient.age || row.patient?.age || "-",
+  };
+}
+
 export default function PatientsPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const { role, isAdmin, loading: authLoading } = useUser();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [patients, setPatients] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [patients, setPatients] = useState<PatientWithActivity[]>([]);
+  const [cursor, setCursor] = useState<KeysetCursor | null>(null);
+  const [totalPatients, setTotalPatients] = useState(0);
+  // Search term whose results are on screen (null = nothing loaded yet)
+  const [loadedSearch, setLoadedSearch] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Selected Patient Details Timeline
   const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
@@ -65,11 +114,18 @@ export default function PatientsPage() {
   // Full Details Modal State
   const [selectedSubmission, setSelectedSubmission] = useState<any | null>(null);
 
-  const expandedPatientIdRef = useRef<string | null>(expandedPatientId);
-  expandedPatientIdRef.current = expandedPatientId;
+  const loading = loadedSearch === null;
+  const fetching = !loading && loadedSearch !== debouncedSearch;
 
-  const patientsRef = useRef<any[]>(patients);
-  patientsRef.current = patients;
+  // Latest values for the live-sync callback (kept in sync after each render)
+  const liveRef = useRef({ expandedPatientId, patients, search: debouncedSearch });
+  useEffect(() => {
+    liveRef.current = { expandedPatientId, patients, search: debouncedSearch };
+  }, [expandedPatientId, patients, debouncedSearch]);
+
+  // Every reload bumps the sequence; responses for an older search are dropped.
+  const requestSeq = useRef(0);
+  const timelineSeq = useRef(0);
 
   // Protect page: admission role has no access to clinical records
   useEffect(() => {
@@ -78,188 +134,78 @@ export default function PatientsPage() {
     }
   }, [role, isAdmin, authLoading, router]);
 
+  // Debounce search so the database is queried once the user pauses typing
   useEffect(() => {
-    fetchPatients("", false);
-  }, []);
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
-  async function fetchPatients(query = "", silent = false) {
-    if (!silent) setLoading(true);
-    let builder = supabase.from("patients").select("*").order("created_at", { ascending: false });
-
-    if (query.trim()) {
-      const filter = buildPatientSearchFilter(query);
-      builder = builder.or(filter);
+  /** Loads the first page; `limit` is raised by live refreshes so loaded pages don't collapse. */
+  const fetchPatients = useCallback(async (search: string, limit = RECORDS_PAGE_SIZE) => {
+    const seq = ++requestSeq.current;
+    try {
+      const page = await fetchPatientsPage(supabase, search, { limit });
+      if (seq !== requestSeq.current) return;
+      setPatients(page.rows);
+      setCursor(page.nextCursor);
+      setTotalPatients(page.total ?? 0);
+      setError(null);
+    } catch (err: any) {
+      if (seq !== requestSeq.current) return;
+      console.error("Error fetching patients:", err);
+      setError(err instanceof MissingMigrationError ? err.message : "تعذر تحميل سجلات المرضى، حاول مرة أخرى.");
+    } finally {
+      if (seq === requestSeq.current) {
+        setLoadedSearch(search);
+        setLoadingMore(false);
+      }
     }
+  }, [supabase]);
 
-    // Step 1: Fetch only the patients matching the search query.
-    const patientsRes = await builder;
-    const patientList = patientsRes.data || [];
-
-    // Step 2: Fetch submissions only for the patients we are displaying.
-    // Using .in("patient_id", ids) hits the indexed column and avoids a full table scan.
-    const subsByPatient = new Map<string, { count: number; latest: string }>();
-    if (patientList.length > 0) {
-      const patientIds = patientList.map((p: any) => p.id);
-      const subsRes = await supabase
-        .from("form_submissions")
-        .select("patient_id, created_at")
-        .in("patient_id", patientIds)
-        .order("created_at", { ascending: false });
-
-      (subsRes.data || []).forEach((s: any) => {
-        if (!s.patient_id) return;
-        const existing = subsByPatient.get(s.patient_id);
-        if (!existing) {
-          subsByPatient.set(s.patient_id, { count: 1, latest: s.created_at });
-        } else {
-          existing.count += 1;
-        }
-      });
+  async function loadMorePatients() {
+    if (!cursor || loadingMore) return;
+    const seq = requestSeq.current;
+    setLoadingMore(true);
+    try {
+      const page = await fetchPatientsPage(supabase, debouncedSearch, { cursor });
+      if (seq !== requestSeq.current) return;
+      setPatients((prev) => appendUnique(prev, page.rows, (p) => p.id));
+      setCursor(page.nextCursor);
+      if (page.total !== null) setTotalPatients(page.total);
+    } catch (err) {
+      console.error("Error loading more patients:", err);
+    } finally {
+      if (seq === requestSeq.current) setLoadingMore(false);
     }
-
-    const enriched = patientList.map((p: any) => {
-      const subInfo = subsByPatient.get(p.id);
-      return {
-        ...p,
-        submissionsCount: subInfo?.count || 0,
-        latestActivity: subInfo?.latest || null,
-      };
-    });
-
-    // Sort by latest activity (or patient registration date)
-    enriched.sort((a: any, b: any) => {
-      const timeA = new Date(a.latestActivity || a.created_at).getTime();
-      const timeB = new Date(b.latestActivity || b.created_at).getTime();
-      return timeB - timeA;
-    });
-
-    setPatients(enriched);
-    if (!silent) setLoading(false);
   }
 
+  useEffect(() => {
+    fetchPatients(debouncedSearch);
+  }, [debouncedSearch, fetchPatients]);
+
   async function fetchPatientTimelineData(patient: any, silent = false) {
-    const pid = patient.id;
+    const seq = ++timelineSeq.current;
     if (!silent) setLoadingTimeline(true);
 
     try {
-      const [
-        radsRes,
-        edusRes,
-        fallScreenRes,
-        fallAdultRes,
-        fallPedRes,
-        assessRes,
-        transRes,
-      ] = await Promise.all([
-        supabase.from("radiation_exposure_logs").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("health_education_assessments").select("*, form_submissions(data), health_education_topic_entries(*)").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("fall_risk_screenings").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("fall_risk_adult_assessments").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("fall_risk_pediatric_assessments").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("patient_assessments").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-        supabase.from("patient_transfers").select("*").eq("patient_id", pid).order("created_at", { ascending: false }),
-      ]);
-
-      function attachMeta(
-        item: any,
-        formType: string,
-        formTypeName: string,
-        category: TimelineCategory,
-        headerCode: string,
-        editUrl: string,
-        icon: any,
-        color: string
-      ) {
-        return {
-          ...item,
-          formType,
-          formTypeName,
-          category,
-          headerCode,
-          editUrl: `${editUrl}?editId=${item.id}`,
-          icon,
-          color,
-          resolvedPatientName: patient.full_name,
-          resolvedMrn: patient.mrn,
-          resolvedGender: patient.gender || "-",
-          resolvedAge: patient.age || "-",
-        };
-      }
-
-      const allItems = [
-        ...(radsRes.data || []).map((r) => attachMeta(r, "radiation", "تسجيل جرعات الأشعة", "radiation", "TRC.MRS", "/forms/radiation-exposure", Activity, "text-sky-600 bg-sky-50")),
-        ...(edusRes.data || []).map((e: any) => {
-          const subData = e.form_submissions?.data || {};
-          const createdDate = e.created_at ? e.created_at.split("T")[0] : "";
-          const createdTime = e.created_at && e.created_at.includes("T") ? e.created_at.split("T")[1].slice(0, 5) : "";
-          const eduDate = e.education_date || subData.education_date || createdDate;
-          const eduTime = e.education_time || subData.education_time || createdTime;
-          const educatorSig = e.educator_signature || e.nurse_signature || subData.educator_name || e.health_education_topic_entries?.[0]?.educator_name || "-";
-          const procLoc = e.procedure_location || subData.procedure_location || "-";
-
-          return attachMeta(
-            {
-              ...e,
-              education_date: eduDate,
-              education_time: eduTime,
-              educator_signature: educatorSig,
-              procedure_location: procLoc,
-            },
-            "education",
-            "التثقيف الصحي للمريض والأسرة",
-            "education",
-            "TRC.MRS",
-            "/forms/patient-education",
-            HeartPulse,
-            "text-emerald-600 bg-emerald-50"
-          );
-        }),
-        ...(fallScreenRes.data || []).map((f) => attachMeta(f, "fall_screen", "المسح المبدئي لخطر السقوط", "fall_screen", "TRC.MRS", "/forms/fall-risk-screening", ShieldAlert, "text-amber-600 bg-amber-50")),
-        ...(fallAdultRes.data || []).map((fa) => attachMeta(fa, "fall_adult", "تقييم مخاطر السقوط للكبار (Hendrich II)", "fall_adult", "TRC-ICD", "/forms/fall-risk-adult", ShieldAlert, "text-rose-600 bg-rose-50")),
-        ...(fallPedRes.data || []).map((fp) => attachMeta(fp, "fall_ped", "مقياس مخاطر سقوط الأطفال (Humpty Dumpty)", "fall_ped", "TRC.ICD", "/forms/fall-risk-pediatric", Baby, "text-cyan-600 bg-cyan-50")),
-        ...(assessRes.data || []).map((a) => {
-          const rawPlans = Array.isArray(a.plan_of_care) ? a.plan_of_care : [];
-          const plans = rawPlans.map((p: any) => ({
-            ...p,
-            time_frame: (!p?.time_frame || p?.time_frame === "15 دقيقة" || p?.time_frame === "30 دقيقة") ? "5 دقائق" : p.time_frame,
-          }));
-          const techPlan = plans.find((p: any) =>
-            !p?.responsible?.some((r: string) => r?.includes("طبيب") || r?.includes("أخصائي")) &&
-            (
-              p?.responsible?.includes("فني الأشعة") ||
-              p?.problem?.includes("السلامة والجرعة") ||
-              p?.interventions?.some((i: string) => i?.includes("جرعة الإشعاع") || i?.includes("دليل الاجراءات"))
-            )
-          );
-          const docPlan = plans.find((p: any) =>
-            p?.responsible?.includes("أخصائي الأشعة") ||
-            p?.responsible?.includes("طبيب الأشعة") ||
-            p?.interventions?.some((i: string) => i?.includes("فوائد ومخاطر")) ||
-            (p?.problem?.includes("التصوير") && !p?.problem?.includes("السلامة والجرعة"))
-          );
-          const resolvedDocSig = a.physician_signature || docPlan?.confirmed_by || null;
-          const resolvedTechSig = techPlan?.confirmed_by || (a.tech_signature && a.tech_signature !== resolvedDocSig ? a.tech_signature : null) || null;
-          return attachMeta({ ...a, plan_of_care: plans, physician_signature: resolvedDocSig, tech_signature: resolvedTechSig }, "assessment", "نموذج تقييم المريض الشامل", "assessment", "TRC-ICD", "/forms/patient-assessment", ClipboardCheck, "text-indigo-600 bg-indigo-50");
-        }),
-        ...(transRes.data || []).map((t) => attachMeta(t, "transfer", "نموذج نقل المريض (RSTP)", "transfer", "TRC.ACT", "/forms/patient-transfer", Ambulance, "text-blue-600 bg-blue-50")),
-      ];
-
-      // Sort chronological descending
-      allItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setPatientTimeline(allItems);
+      const { rows } = await fetchClinicalRecordsPage(supabase, { patientId: patient.id }, { limit: TIMELINE_LIMIT });
+      if (seq !== timelineSeq.current) return;
+      // Already sorted newest first by the database
+      setPatientTimeline(rows.map((r) => toTimelineItem(r, patient)));
     } catch (err) {
       console.error("Error fetching patient timeline:", err);
     } finally {
-      if (!silent) setLoadingTimeline(false);
+      if (!silent && seq === timelineSeq.current) setLoadingTimeline(false);
     }
   }
 
   // Real-time live synchronization (No Refresh Needed)
   useFormSync(() => {
-    fetchPatients(searchQuery, true);
-    const currExpandedId = expandedPatientIdRef.current;
+    const live = liveRef.current;
+    fetchPatients(live.search, Math.max(RECORDS_PAGE_SIZE, live.patients.length));
+    const currExpandedId = live.expandedPatientId;
     if (currExpandedId) {
-      const activePatient = patientsRef.current.find((p) => p.id === currExpandedId) || { id: currExpandedId };
+      const activePatient = live.patients.find((p) => p.id === currExpandedId) || { id: currExpandedId };
       fetchPatientTimelineData(activePatient, true);
     }
   });
@@ -273,8 +219,15 @@ export default function PatientsPage() {
 
     setExpandedPatientId(pid);
     setTimelineCategory("all");
+    setPatientTimeline([]);
     await fetchPatientTimelineData(patient, false);
   }
+
+  const timelineCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of patientTimeline) counts[t.category] = (counts[t.category] || 0) + 1;
+    return counts;
+  }, [patientTimeline]);
 
   // Filtered timeline entries
   const filteredTimeline = useMemo(() => {
@@ -284,7 +237,7 @@ export default function PatientsPage() {
 
   return (
     <div className="space-y-6">
-      
+
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-3xl shadow-xs border border-slate-200/80 no-print">
         <div className="flex items-center gap-3.5">
@@ -303,7 +256,7 @@ export default function PatientsPage() {
 
         <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-200">
           <Sparkles className="w-4 h-4 text-[#621c6f]" />
-          <span>إجمالي المرضى: <strong className="text-slate-900 font-mono text-sm">{patients.length}</strong></span>
+          <span>{debouncedSearch ? "نتائج البحث" : "إجمالي المرضى"}: <strong className="text-slate-900 font-mono text-sm">{totalPatients}</strong></span>
         </div>
       </div>
 
@@ -312,18 +265,23 @@ export default function PatientsPage() {
         <input
           type="text"
           value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            fetchPatients(e.target.value);
-          }}
+          onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="ابحث باسم المريض رباعي أو برقم الملف الطبي (MRN)..."
           className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-[#621c6f] outline-none text-xs sm:text-sm transition-all"
         />
-        <Search className="w-4 h-4 absolute left-6 top-5.5 text-slate-400" />
+        {fetching && !loading ? (
+          <Loader2 className="w-4 h-4 absolute left-6 top-5.5 text-[#621c6f] animate-spin" />
+        ) : (
+          <Search className="w-4 h-4 absolute left-6 top-5.5 text-slate-400" />
+        )}
       </div>
 
       {/* Patient Cards List */}
-      {loading ? (
+      {error ? (
+        <div className="bg-rose-50 p-6 text-center rounded-2xl border border-rose-200 text-rose-800 text-sm font-bold no-print">
+          {error}
+        </div>
+      ) : loading ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
           <div className="animate-spin w-8 h-8 border-3 border-[#621c6f] border-t-transparent rounded-full mx-auto mb-3" />
           <p className="text-xs text-slate-500 font-bold">جاري تحميل سجلات المرضى...</p>
@@ -334,16 +292,16 @@ export default function PatientsPage() {
           <p className="text-xs text-slate-400">تأكد من كتابة الاسم أو رقم الملف بشكل صحيح.</p>
         </div>
       ) : (
-        <div className="space-y-3.5 no-print">
+        <div className={`space-y-3.5 no-print transition-opacity ${fetching ? "opacity-60" : ""}`}>
           {patients.map((patient) => {
             const isExpanded = expandedPatientId === patient.id;
-            
+
             // Build quick form URLs with patient context pre-filled
             const patientParams = new URLSearchParams();
             if (patient.mrn) patientParams.set("mrn", patient.mrn);
             if (patient.full_name) patientParams.set("name", patient.full_name);
             if (patient.gender) patientParams.set("gender", patient.gender);
-            if (patient.age !== undefined && patient.age !== null && patient.age !== "") patientParams.set("age", String(patient.age));
+            if (patient.age !== undefined && patient.age !== null) patientParams.set("age", String(patient.age));
             const patientQuery = patientParams.toString() ? `?${patientParams.toString()}` : "";
 
             const QUICK_ADD_FORMS = [
@@ -359,15 +317,14 @@ export default function PatientsPage() {
             const visibleForms = isAdmin
               ? QUICK_ADD_FORMS
               : role
-              ? QUICK_ADD_FORMS.filter((f) => f.roles.includes(role))
-              : QUICK_ADD_FORMS;
+                ? QUICK_ADD_FORMS.filter((f) => f.roles.includes(role))
+                : QUICK_ADD_FORMS;
 
             return (
               <div
                 key={patient.id}
-                className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${
-                  isExpanded ? "border-slate-400 shadow-md ring-1 ring-slate-300" : "border-slate-200 hover:border-slate-300 shadow-2xs"
-                }`}
+                className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${isExpanded ? "border-slate-400 shadow-md ring-1 ring-slate-300" : "border-slate-200 hover:border-slate-300 shadow-2xs [content-visibility:auto] [contain-intrinsic-size:auto_110px]"
+                  }`}
               >
                 {/* Main Patient Card Summary Bar */}
                 <div
@@ -424,11 +381,10 @@ export default function PatientsPage() {
                   <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                     <button
                       type="button"
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
-                        isExpanded
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${isExpanded
                           ? "bg-slate-900 text-white border-slate-900 shadow-xs"
                           : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                      }`}
+                        }`}
                     >
                       <span>{isExpanded ? "إغلاق السجل" : "عرض السجل الطبي"}</span>
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -439,7 +395,7 @@ export default function PatientsPage() {
                 {/* ================= EXPANDED CLINICAL WORKSPACE ================= */}
                 {isExpanded && (
                   <div className="border-t border-slate-200 bg-slate-50/70 p-4 sm:p-6 space-y-5 animate-in fade-in duration-150">
-                    
+
                     {/* Quick Launch Action Bar */}
                     <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
                       <div className="flex items-center gap-2">
@@ -448,7 +404,7 @@ export default function PatientsPage() {
                           <span>توثيق استمارة جديدة لهذا المريض:</span>
                         </span>
                       </div>
-                      
+
                       <div className="flex flex-wrap items-center gap-1.5">
                         {visibleForms.map((f) => (
                           <Link
@@ -471,22 +427,21 @@ export default function PatientsPage() {
                         </span>
                         {[
                           { id: "all", label: `الكل (${patientTimeline.length})` },
-                          { id: "fall_screen", label: `مسح السقوط (${patientTimeline.filter(t => t.category === "fall_screen").length})` },
-                          { id: "assessment", label: `التقييم الشامل (${patientTimeline.filter(t => t.category === "assessment").length})` },
-                          { id: "fall_adult", label: `سقوط كبار (${patientTimeline.filter(t => t.category === "fall_adult").length})` },
-                          { id: "fall_ped", label: `سقوط أطفال (${patientTimeline.filter(t => t.category === "fall_ped").length})` },
-                          { id: "transfer", label: `نقل المريض (${patientTimeline.filter(t => t.category === "transfer").length})` },
-                          { id: "radiation", label: `جرعات الأشعة (${patientTimeline.filter(t => t.category === "radiation").length})` },
-                          { id: "education", label: `التثقيف الصحي (${patientTimeline.filter(t => t.category === "education").length})` },
+                          { id: "fall_screen", label: `مسح السقوط (${timelineCounts.fall_screen || 0})` },
+                          { id: "assessment", label: `التقييم الشامل (${timelineCounts.assessment || 0})` },
+                          { id: "fall_adult", label: `سقوط كبار (${timelineCounts.fall_adult || 0})` },
+                          { id: "fall_ped", label: `سقوط أطفال (${timelineCounts.fall_ped || 0})` },
+                          { id: "transfer", label: `نقل المريض (${timelineCounts.transfer || 0})` },
+                          { id: "radiation", label: `جرعات الأشعة (${timelineCounts.radiation || 0})` },
+                          { id: "education", label: `التثقيف الصحي (${timelineCounts.education || 0})` },
                         ].map((cat) => (
                           <button
                             key={cat.id}
                             onClick={() => setTimelineCategory(cat.id as TimelineCategory)}
-                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                              timelineCategory === cat.id
+                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${timelineCategory === cat.id
                                 ? "bg-[#621c6f] text-white shadow-xs"
                                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-                            }`}
+                              }`}
                           >
                             {cat.label}
                           </button>
@@ -522,11 +477,10 @@ export default function PatientsPage() {
                           return (
                             <div
                               key={item.id}
-                              className={`rounded-2xl border p-4 shadow-2xs transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${
-                                isMyPartPending
+                              className={`rounded-2xl border p-4 shadow-2xs transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${isMyPartPending
                                   ? "bg-amber-50/40 border-amber-300 hover:border-amber-400 hover:shadow-xs"
                                   : "bg-white border-slate-200/90 hover:bg-slate-50/80 hover:shadow-xs"
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start gap-3 flex-1">
                                 <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 ${item.color || "bg-slate-100 text-slate-700"}`}>
@@ -564,17 +518,15 @@ export default function PatientsPage() {
 
                                     {/* Clinical badges */}
                                     {item.formType === "fall_ped" && (
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        item.risk_level === "عالية المخاطر" ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      }`}>
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.risk_level === "عالية المخاطر" ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        }`}>
                                         {item.risk_level} {item.total_score ? `(${item.total_score} نقطة)` : ""}
                                       </span>
                                     )}
 
                                     {item.formType === "fall_adult" && (
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                        item.is_high_risk ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      }`}>
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${item.is_high_risk ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        }`}>
                                         {item.is_high_risk ? "خطر عالي" : "خطر منخفض"} {item.total_score ? `(${item.total_score} نقطة)` : ""}
                                       </span>
                                     )}
@@ -656,6 +608,28 @@ export default function PatientsPage() {
               </div>
             );
           })}
+
+          {/* Pagination Footer */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3.5 bg-white rounded-2xl border border-slate-200">
+            <span className="text-xs text-slate-500 font-bold">
+              عرض <span className="font-mono text-slate-900">{patients.length}</span> من أصل{" "}
+              <span className="font-mono text-slate-900">{Math.max(totalPatients, patients.length)}</span> مريض
+            </span>
+            {cursor && (
+              <button
+                onClick={loadMorePatients}
+                disabled={loadingMore}
+                className="px-4 py-2 bg-[#621c6f] hover:bg-[#481454] disabled:opacity-70 text-white font-bold text-xs rounded-xl shadow-xs transition-all inline-flex items-center gap-1.5"
+              >
+                {loadingMore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                <span>
+                  {loadingMore
+                    ? "جاري التحميل..."
+                    : `عرض ${Math.min(RECORDS_PAGE_SIZE, Math.max(totalPatients - patients.length, 0)) || RECORDS_PAGE_SIZE} مريض إضافي`}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
