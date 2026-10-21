@@ -143,23 +143,40 @@ export default function SubmissionsPage() {
     queryRef.current = { query, queryKey };
   }, [items, query, queryKey]);
 
+  // Counts don't depend on the selected tab / status, so they're only re-fetched when
+  // search, date range or role change (or on a live refresh).
+  const summaryKeyRef = useRef<string | null>(null);
+
   /** Loads the first page; `limit` is raised by live refreshes so loaded pages don't collapse. */
-  const reload = useCallback(async (q: RecordsQuery, key: string, limit = RECORDS_PAGE_SIZE) => {
+  const reload = useCallback(async (q: RecordsQuery, key: string, limit = RECORDS_PAGE_SIZE, forceSummary = false) => {
     const seq = ++requestSeq.current;
+    const summaryKey = JSON.stringify([q.role, q.isAdmin, q.search, q.from]);
+    const needSummary = forceSummary || summaryKeyRef.current !== summaryKey;
     try {
       const [page, sum] = await Promise.all([
         fetchClinicalRecordsPage(supabase, q, { limit }),
-        fetchClinicalRecordsSummary(supabase, q),
+        needSummary ? fetchClinicalRecordsSummary(supabase, q) : Promise.resolve(null),
       ]);
       if (seq !== requestSeq.current) return;
       setItems(page.rows.map(toSubmissionItem));
       setCursor(page.nextCursor);
-      setSummary(sum);
+      if (sum) {
+        setSummary(sum);
+        summaryKeyRef.current = summaryKey;
+      }
       setError(null);
     } catch (err: any) {
       if (seq !== requestSeq.current) return;
       console.error("Error fetching submissions:", err);
-      setError(err instanceof MissingMigrationError ? err.message : "تعذر تحميل السجلات، حاول مرة أخرى.");
+      const msg = err?.message || "";
+      const timeout = /statement timeout|canceling statement/i.test(msg);
+      setError(
+        err instanceof MissingMigrationError
+          ? err.message
+          : timeout
+            ? "انتهت مهلة قاعدة البيانات — شغّل ملف supabase_clinical_records.sql في محرر SQL بـ Supabase (قسم stored missing_roles) ثم أعد المحاولة."
+            : "تعذر تحميل السجلات، حاول مرة أخرى."
+      );
     } finally {
       if (seq === requestSeq.current) {
         setLoadedKey(key);
@@ -194,7 +211,7 @@ export default function SubmissionsPage() {
   useFormSync(() => {
     if (authLoading) return;
     const { query: q, queryKey: key } = queryRef.current;
-    reload(q, key, Math.max(RECORDS_PAGE_SIZE, itemsCountRef.current));
+    reload(q, key, Math.max(RECORDS_PAGE_SIZE, itemsCountRef.current), true);
   });
 
   const handleView = useCallback((item: any) => setSelectedSubmission(item), []);

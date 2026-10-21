@@ -194,6 +194,110 @@ RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 -- ----------------------------------------------------------------------------
+-- 2b. Stored completion status (missing_roles), maintained by triggers.
+--     Reads never recompute status, so status filters / counts stay instant.
+-- ----------------------------------------------------------------------------
+ALTER TABLE public.patient_assessments          ADD COLUMN IF NOT EXISTS missing_roles text[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.patient_transfers            ADD COLUMN IF NOT EXISTS missing_roles text[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.health_education_assessments ADD COLUMN IF NOT EXISTS missing_roles text[] NOT NULL DEFAULT '{}';
+
+CREATE OR REPLACE FUNCTION public.cr_transfer_missing_roles(p_physician_sig text, p_nurse_sig text)
+RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
+  SELECT array_remove(ARRAY[
+    CASE WHEN NOT public.cr_nonblank(p_physician_sig) THEN 'radiologist' END,
+    CASE WHEN NOT public.cr_nonblank(p_nurse_sig) THEN 'nurse' END
+  ], NULL)
+$$;
+
+-- Patient assessment: recompute on every insert / update
+CREATE OR REPLACE FUNCTION public.cr_trg_assessment_status()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.missing_roles := public.cr_assessment_missing_roles(NEW.procedure_name, NEW.nurse_signature, NEW.physician_signature, NEW.plan_of_care);
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_assessment_status ON public.patient_assessments;
+CREATE TRIGGER trg_assessment_status BEFORE INSERT OR UPDATE ON public.patient_assessments
+  FOR EACH ROW EXECUTE FUNCTION public.cr_trg_assessment_status();
+
+-- Patient transfer: recompute on every insert / update
+CREATE OR REPLACE FUNCTION public.cr_trg_transfer_status()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.missing_roles := public.cr_transfer_missing_roles(NEW.receiving_physician_signature, NEW.receiving_nurse_signature);
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_transfer_status ON public.patient_transfers;
+CREATE TRIGGER trg_transfer_status BEFORE INSERT OR UPDATE ON public.patient_transfers
+  FOR EACH ROW EXECUTE FUNCTION public.cr_trg_transfer_status();
+
+-- Health education: status depends on the assessment's procedure + its topic entries
+CREATE OR REPLACE FUNCTION public.cr_trg_education_status()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.missing_roles := public.cr_education_missing_roles(NEW.id, NEW.procedure_name);
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_education_status ON public.health_education_assessments;
+CREATE TRIGGER trg_education_status BEFORE INSERT OR UPDATE OF procedure_name ON public.health_education_assessments
+  FOR EACH ROW EXECUTE FUNCTION public.cr_trg_education_status();
+
+CREATE OR REPLACE FUNCTION public.cr_trg_education_topic_status()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    UPDATE public.health_education_assessments e
+       SET missing_roles = public.cr_education_missing_roles(e.id, e.procedure_name)
+     WHERE e.id = NEW.assessment_id;
+  END IF;
+  IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND OLD.assessment_id IS DISTINCT FROM NEW.assessment_id) THEN
+    UPDATE public.health_education_assessments e
+       SET missing_roles = public.cr_education_missing_roles(e.id, e.procedure_name)
+     WHERE e.id = OLD.assessment_id;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_education_topic_status ON public.health_education_topic_entries;
+CREATE TRIGGER trg_education_topic_status AFTER INSERT OR UPDATE OR DELETE ON public.health_education_topic_entries
+  FOR EACH ROW EXECUTE FUNCTION public.cr_trg_education_topic_status();
+
+-- Backfill existing rows (only rows whose stored value is out of date are written)
+UPDATE public.patient_assessments a
+   SET missing_roles = public.cr_assessment_missing_roles(a.procedure_name, a.nurse_signature, a.physician_signature, a.plan_of_care)
+ WHERE a.missing_roles IS DISTINCT FROM public.cr_assessment_missing_roles(a.procedure_name, a.nurse_signature, a.physician_signature, a.plan_of_care);
+UPDATE public.patient_transfers t
+   SET missing_roles = public.cr_transfer_missing_roles(t.receiving_physician_signature, t.receiving_nurse_signature)
+ WHERE t.missing_roles IS DISTINCT FROM public.cr_transfer_missing_roles(t.receiving_physician_signature, t.receiving_nurse_signature);
+UPDATE public.health_education_assessments e
+   SET missing_roles = public.cr_education_missing_roles(e.id, e.procedure_name)
+ WHERE e.missing_roles IS DISTINCT FROM public.cr_education_missing_roles(e.id, e.procedure_name);
+
+-- Partial indexes so complete / incomplete list filters use created_at ordering per table
+-- (predicate must match list_clinical_records status checks: = '{}' vs <> '{}')
+CREATE INDEX IF NOT EXISTS idx_assessment_incomplete_created_id
+  ON public.patient_assessments (created_at DESC, id DESC) WHERE missing_roles <> '{}'::text[];
+CREATE INDEX IF NOT EXISTS idx_assessment_complete_created_id
+  ON public.patient_assessments (created_at DESC, id DESC) WHERE missing_roles = '{}'::text[];
+CREATE INDEX IF NOT EXISTS idx_transfer_incomplete_created_id
+  ON public.patient_transfers (created_at DESC, id DESC) WHERE missing_roles <> '{}'::text[];
+CREATE INDEX IF NOT EXISTS idx_transfer_complete_created_id
+  ON public.patient_transfers (created_at DESC, id DESC) WHERE missing_roles = '{}'::text[];
+CREATE INDEX IF NOT EXISTS idx_edu_incomplete_created_id
+  ON public.health_education_assessments (created_at DESC, id DESC) WHERE missing_roles <> '{}'::text[];
+CREATE INDEX IF NOT EXISTS idx_edu_complete_created_id
+  ON public.health_education_assessments (created_at DESC, id DESC) WHERE missing_roles = '{}'::text[];
+CREATE INDEX IF NOT EXISTS idx_assessment_missing_roles_gin
+  ON public.patient_assessments USING GIN (missing_roles);
+CREATE INDEX IF NOT EXISTS idx_transfer_missing_roles_gin
+  ON public.patient_transfers USING GIN (missing_roles);
+CREATE INDEX IF NOT EXISTS idx_edu_missing_roles_gin
+  ON public.health_education_assessments USING GIN (missing_roles);
+
+-- ----------------------------------------------------------------------------
 -- 3. Unified view over the 7 clinical models
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.clinical_records WITH (security_invoker = true) AS
@@ -204,7 +308,7 @@ CREATE OR REPLACE VIEW public.clinical_records WITH (security_invoker = true) AS
 UNION ALL
   SELECT 'education'::text, e.id, e.patient_id, e.created_at,
          nullif(e.procedure_name, ''),
-         public.cr_education_missing_roles(e.id, e.procedure_name)
+         e.missing_roles
   FROM public.health_education_assessments e
 UNION ALL
   SELECT 'fall_screen'::text, fs.id, fs.patient_id, fs.created_at, NULL::text, '{}'::text[]
@@ -218,15 +322,12 @@ UNION ALL
 UNION ALL
   SELECT 'assessment'::text, a.id, a.patient_id, a.created_at,
          coalesce(nullif(a.procedure_name, ''), nullif(a.diagnosis, '')),
-         public.cr_assessment_missing_roles(a.procedure_name, a.nurse_signature, a.physician_signature, a.plan_of_care)
+         a.missing_roles
   FROM public.patient_assessments a
 UNION ALL
   SELECT 'transfer'::text, t.id, t.patient_id, t.created_at,
          nullif(t.from_location, ''),
-         array_remove(ARRAY[
-           CASE WHEN NOT public.cr_nonblank(t.receiving_physician_signature) THEN 'radiologist' END,
-           CASE WHEN NOT public.cr_nonblank(t.receiving_nurse_signature) THEN 'nurse' END
-         ], NULL)
+         t.missing_roles
   FROM public.patient_transfers t;
 
 -- Full row payload for one record (same shape the app used to get from select("*"))
@@ -296,7 +397,17 @@ LANGUAGE sql STABLE AS $$
       AND (p_patient_id IS NULL OR c.patient_id = p_patient_id)
       AND (p_cursor_created_at IS NULL OR (c.created_at, c.id) < (p_cursor_created_at, p_cursor_id))
       AND public.cr_matches_search(p.full_name, p.mrn, c.detail, p_search)
-      AND public.cr_status_matches(c.missing_roles, p_status, p_role)
+      -- Sargable status predicates (enables partial indexes on missing_roles); keep in sync with cr_status_matches
+      AND (
+        coalesce(p_status, 'all') = 'all'
+        OR (p_status = 'complete' AND c.missing_roles = '{}'::text[])
+        OR (p_status = 'incomplete' AND c.missing_roles <> '{}'::text[])
+        OR (
+          p_status = 'pending_my_role'
+          AND c.missing_roles <> '{}'::text[]
+          AND (p_role = 'admin' OR p_role = ANY (c.missing_roles))
+        )
+      )
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT least(greatest(coalesce(p_limit, 200), 1), 5000)
   )
@@ -330,9 +441,12 @@ RETURNS TABLE (
 LANGUAGE sql STABLE AS $$
   SELECT c.form_type,
          count(*),
-         count(*) FILTER (WHERE public.cr_status_matches(c.missing_roles, 'complete', p_role)),
-         count(*) FILTER (WHERE public.cr_status_matches(c.missing_roles, 'incomplete', p_role)),
-         count(*) FILTER (WHERE public.cr_status_matches(c.missing_roles, 'pending_my_role', p_role))
+         count(*) FILTER (WHERE c.missing_roles = '{}'::text[]),
+         count(*) FILTER (WHERE c.missing_roles <> '{}'::text[]),
+         count(*) FILTER (
+           WHERE c.missing_roles <> '{}'::text[]
+             AND (p_role = 'admin' OR p_role = ANY (c.missing_roles))
+         )
   FROM public.clinical_records c
   LEFT JOIN public.patients p ON p.id = c.patient_id
   WHERE (p_from IS NULL OR c.created_at >= p_from)
