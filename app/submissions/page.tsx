@@ -151,7 +151,12 @@ export default function SubmissionsPage() {
     try {
       const [page, sum] = await Promise.all([
         fetchClinicalRecordsPage(supabase, q, { limit }),
-        needSummary ? fetchClinicalRecordsSummary(supabase, q) : Promise.resolve(null),
+        needSummary
+          ? fetchClinicalRecordsSummary(supabase, q).catch((err) => {
+              console.warn("Failed fetching summary, skipping:", err);
+              return null;
+            })
+          : Promise.resolve(null),
       ]);
       if (seq !== requestSeq.current) return;
       setItems(page.rows.map(toSubmissionItem));
