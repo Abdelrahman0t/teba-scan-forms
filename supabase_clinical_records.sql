@@ -165,10 +165,22 @@ RETURNS text[] LANGUAGE sql STABLE AS $$
       AND te.is_comprehended IS NOT NULL
       AND btrim(coalesce(te.educator_name, ''), E' \t\r\n') <> ''
   ),
+  patient_info AS (
+    SELECT p.gender
+    FROM public.health_education_assessments hea
+    LEFT JOIN public.patients p ON p.id = hea.patient_id
+    WHERE hea.id = p_assessment_id
+    LIMIT 1
+  ),
   flags AS (
     SELECT
       (SELECT bool_and(EXISTS (SELECT 1 FROM entries e WHERE e.topic_name LIKE '%' || x.prefix || '%'))
-         FROM unnest(ARRAY['تحضير', 'التنبيه علي السيدة', 'السقوط']) AS x(prefix)) AS has_nurse,
+         FROM unnest(
+           CASE WHEN coalesce((SELECT gender FROM patient_info), '') IN ('ذكر', 'male', 'Male')
+             THEN ARRAY['تحضير', 'السقوط']
+             ELSE ARRAY['تحضير', 'التنبيه علي السيدة', 'السقوط']
+           END
+         ) AS x(prefix)) AS has_nurse,
       (SELECT bool_and(EXISTS (SELECT 1 FROM entries e WHERE e.topic_name LIKE '%' || x.prefix || '%'))
          FROM unnest(ARRAY['المخاطر المحتملة', 'بالصبغة', 'تعليمات ما بعد الإجراء']) AS x(prefix)) AS has_second,
       public.cr_proc_needs_radio(p_proc) AS radio,

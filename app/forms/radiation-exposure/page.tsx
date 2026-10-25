@@ -1000,7 +1000,7 @@ function RadiationExposureContent() {
 
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                جرعة الاشعاع <span className="text-rose-500">*</span>
+                جرعة الاشعاع <span className="text-slate-500 font-semibold text-[11px] mr-1">(kV, mA)</span> <span className="text-rose-500">*</span>
               </label>
               <input
                 type="number"
@@ -1134,7 +1134,7 @@ function RadiationExposureContent() {
               <th className="border border-black p-2">الوزن</th>
               <th className="border border-black p-2">السن</th>
               <th className="border border-black p-2">الاجراء مكان الاجراء</th>
-              <th className="border border-black p-2">جرعة الاشعاع</th>
+              <th className="border border-black p-2">جرعة الاشعاع (kV, mA)</th>
               <th className="border border-black p-2">الجرعة التراكمية</th>
               <th className="border border-black p-2">توقيع فني الاشعة</th>
             </tr>

@@ -51,6 +51,14 @@ function playSuccessSound() {
   } catch (e) {}
 }
 
+function normalizeGender(g?: string | null): "ذكر" | "انثي" | "" {
+  if (!g) return "";
+  const s = g.trim();
+  if (s === "ذكر" || s.toLowerCase() === "male") return "ذكر";
+  if (s === "انثي" || s === "أنثى" || s.toLowerCase() === "female") return "انثي";
+  return "";
+}
+
 const CORE_PDF_TOPICS = [
   "تعليمات تحضير المريض للفحص",
   "بالنسبة للسيدات: التنبيه علي السيدة بضرورة الإفصاح لطبيب الأشعة أو فني الأشعة إذا كانت حامل أو تخطط للحمل خلال ال 3 أشهر القادمة أو في مرحلة الرضاعة.",
@@ -153,6 +161,8 @@ function PatientEducationContent() {
   // Patient Header - ALL REQUIRED
   const [mrn, setMrn] = useState("");
   const [patientName, setPatientName] = useState("");
+  const [gender, setGender] = useState<"ذكر" | "انثي" | "">("");
+  const isMale = normalizeGender(gender) === "ذكر";
   const [educationDate, setEducationDate] = useState(() => getCurrentDate());
   const [educationTime, setEducationTime] = useState(() => getCurrentTimeShort());
   const [procedureName, setProcedureName] = useState("");
@@ -162,6 +172,25 @@ function PatientEducationContent() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [locationCustom, setLocationCustom] = useState("");
   const [patientId, setPatientId] = useState<string | null>(null);
+
+  // If patient is male, automatically clear topic 1 (women education choice)
+  useEffect(() => {
+    if (isMale) {
+      setTopics((prev) =>
+        prev.map((t, idx) => {
+          if (idx === 1 || t.topic_name.includes("التنبيه علي السيدة")) {
+            return {
+              ...t,
+              is_comprehended: null,
+              educator_name: "",
+              reeducation_required: false,
+            };
+          }
+          return t;
+        })
+      );
+    }
+  }, [isMale]);
 
   const PROCEDURE_LOCATIONS = [
     "المخ",
@@ -359,12 +388,14 @@ function PatientEducationContent() {
     const editId = searchParams.get("editId");
     const mrnParam = searchParams.get("mrn");
     const nameParam = searchParams.get("name");
+    const genderParam = searchParams.get("gender");
 
     if (editId) {
       loadRecordForEdit(editId);
     } else if (mrnParam) {
       setMrn(mrnParam);
       if (nameParam) setPatientName(nameParam);
+      if (genderParam) setGender(normalizeGender(genderParam));
       searchPatientByMrn(mrnParam);
     }
   }, [searchParams, authLoading, role, isAdmin]);
@@ -374,7 +405,7 @@ function PatientEducationContent() {
     try {
       const { data, error } = await supabase
         .from("health_education_assessments")
-        .select("*, patients(id, full_name, mrn), health_education_topic_entries(*), form_submissions(data)")
+        .select("*, patients(id, full_name, mrn, gender), health_education_topic_entries(*), form_submissions(data)")
         .eq("id", id)
         .single();
 
@@ -384,6 +415,7 @@ function PatientEducationContent() {
         setPatientId(data.patient_id);
         setPatientName(data.patients?.full_name || "");
         setMrn(data.patients?.mrn || "");
+        setGender(normalizeGender(data.patients?.gender || (data as any).form_submissions?.data?.gender || ""));
         const subData = (data as any).form_submissions?.data || {};
         const createdDate = data.created_at ? data.created_at.split("T")[0] : getCurrentDate();
         const createdTime = data.created_at && data.created_at.includes("T") ? data.created_at.split("T")[1].slice(0, 5) : getCurrentTimeShort();
@@ -562,6 +594,7 @@ function PatientEducationContent() {
     setProcedureLocation("");
     setSelectedLocations([]);
     setLocationCustom("");
+    setGender("");
   }
 
   async function searchPatientByMrn(searchMrn: string) {
@@ -594,6 +627,10 @@ function PatientEducationContent() {
             message: `لم يتم العثور على أي مريض مسجل برقم الملف الطبي: (${cleanMrn})`,
           });
           return;
+        }
+
+        if (patient.gender) {
+          setGender(normalizeGender(patient.gender));
         }
 
         // Query all existing education records for this patient
@@ -671,6 +708,9 @@ function PatientEducationContent() {
       setPatientId(data.id);
       setMrn(data.mrn || cleanMrn);
       setPatientName(data.full_name || "");
+      if (data.gender) {
+        setGender(normalizeGender(data.gender));
+      }
       setEducationDate(getCurrentDate());
       setEducationTime(getCurrentTimeShort());
     } catch (err) {}
@@ -713,9 +753,12 @@ function PatientEducationContent() {
     // Nurse must fill items 1, 2, 3 (indices 0, 1, 2)
     if (role === "nurse") {
       const nurseTopics = topics.slice(0, 3);
-      const unselectedNurse = nurseTopics.filter((t) => t.is_comprehended === null);
+      const unselectedNurse = nurseTopics.filter((t, idx) => {
+        if (isMale && (idx === 1 || t.topic_name.includes("التنبيه علي السيدة"))) return false;
+        return t.is_comprehended === null;
+      });
       if (unselectedNurse.length > 0) {
-        errors.topicsComprehension = `يرجى تحديد (نعم أو لا) للمواضيع التثقيفية الخاصة بالتمريض (بنود 1-3). المتبقي: ${unselectedNurse.length}`;
+        errors.topicsComprehension = `يرجى تحديد (نعم أو لا) للمواضيع التثقيفية الخاصة بالتمريض. المتبقي: ${unselectedNurse.length}`;
       }
     }
 
@@ -792,12 +835,12 @@ function PatientEducationContent() {
           setPatientId(currentPid);
           await supabase
             .from("patients")
-            .update({ full_name: patientName.trim() })
+            .update({ full_name: patientName.trim(), ...(gender ? { gender } : {}) })
             .eq("id", currentPid);
         } else {
           const { data: newPatient, error: pErr } = await supabase
             .from("patients")
-            .upsert({ mrn: mrn.trim(), full_name: patientName.trim() }, { onConflict: "mrn" })
+            .upsert({ mrn: mrn.trim(), full_name: patientName.trim(), ...(gender ? { gender } : {}) }, { onConflict: "mrn" })
             .select()
             .single();
 
@@ -808,7 +851,7 @@ function PatientEducationContent() {
       } else {
         await supabase
           .from("patients")
-          .update({ full_name: patientName.trim(), mrn: mrn.trim() })
+          .update({ full_name: patientName.trim(), mrn: mrn.trim(), ...(gender ? { gender } : {}) })
           .eq("id", currentPid);
       }
 
@@ -944,6 +987,7 @@ function PatientEducationContent() {
         const submissionPayload = {
           mrn,
           patient_name: patientName,
+          gender: gender || null,
           education_date: educationDate,
           education_time: educationTime,
           educator_name: profile?.full_name || "مسؤول التثقيف",
@@ -1258,8 +1302,8 @@ function PatientEducationContent() {
               </div>
             )}
 
-            {/* Top Row: Basic Info (MRN & Patient Name) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Top Row: Basic Info (MRN, Patient Name & Gender) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   رقم الملف الطبي <span className="text-rose-500">*</span>
@@ -1336,6 +1380,40 @@ function PatientEducationContent() {
                 {fieldErrors.patientName && (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.patientName}</p>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  النوع / الجنس <span className="text-slate-400 font-normal text-[11px]">(لتحديد البنود النسائية)</span>
+                </label>
+                <div className="flex gap-2">
+                  {(["ذكر", "انثي"] as const).map((g) => {
+                    const isSelected = normalizeGender(gender) === g;
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        disabled={isNurseDisabled}
+                        onClick={() => {
+                          const normG = normalizeGender(g);
+                          setGender(normalizeGender(gender) === normG ? "" : normG);
+                        }}
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 select-none ${
+                          isNurseDisabled
+                            ? isSelected
+                              ? "bg-slate-200 text-slate-700 border-slate-300 cursor-not-allowed"
+                              : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                            : isSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-200"
+                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 cursor-pointer"
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-white" : "bg-slate-300"}`} />
+                        <span>{g === "ذكر" ? "ذكر" : "أنثى"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -2118,8 +2196,10 @@ function PatientEducationContent() {
                   const isNurseItem = idx < 3;
                   const isSecondRoleItem = idx >= 3 && idx < 6;
                   const isCustomItem = t.is_custom;
+                  const isWomenTopic = idx === 1 || t.topic_name.includes("التنبيه علي السيدة");
+                  const isTopicDisabledForMale = isMale && isWomenTopic;
 
-                  const canEditThisRow = !isLocked && (
+                  const canEditThisRow = !isLocked && !isTopicDisabledForMale && (
                     isAdmin ||
                     (isNurseItem && role === "nurse") ||
                     (isSecondRoleItem && (
@@ -2134,7 +2214,16 @@ function PatientEducationContent() {
                   );
 
                   return (
-                    <tr key={t.id} className={`transition-colors ${canEditThisRow ? "hover:bg-slate-50/60" : "bg-slate-50/40 opacity-50 select-none"}`}>
+                    <tr
+                      key={t.id}
+                      className={`transition-colors ${
+                        isTopicDisabledForMale
+                          ? "bg-slate-100/70 opacity-60 select-none"
+                          : canEditThisRow
+                          ? "hover:bg-slate-50/60"
+                          : "bg-slate-50/40 opacity-50 select-none"
+                      }`}
+                    >
                       <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
 
                       <td className="p-3 font-semibold text-slate-800 leading-relaxed">
@@ -2161,17 +2250,31 @@ function PatientEducationContent() {
                                 />
                               </div>
                             ) : (
-                              t.topic_name
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={isTopicDisabledForMale ? "line-through text-slate-400" : ""}>
+                                  {t.topic_name}
+                                </span>
+                                {isTopicDisabledForMale && (
+                                  <span className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                    <Lock className="w-3 h-3" />
+                                    <span>معطل للمرضى الذكور (خاص بالسيدات فقط)</span>
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold self-start shrink-0 border ${
-                            isNurseItem
+                            isTopicDisabledForMale
+                              ? "bg-slate-200 text-slate-600 border-slate-300"
+                              : isNurseItem
                               ? "bg-blue-50 text-blue-700 border-blue-200"
                               : isSecondRoleItem
                               ? "bg-purple-50 text-purple-700 border-purple-200"
                               : "bg-emerald-50 text-emerald-700 border-emerald-200"
                           }`}>
-                            {isNurseItem
+                            {isTopicDisabledForMale
+                              ? "معطل (خاص بالسيدات)"
+                              : isNurseItem
                               ? "خاص بالتمريض"
                               : isSecondRoleItem
                               ? `خاص بـ ${secondRoleTitle}`
@@ -2181,7 +2284,9 @@ function PatientEducationContent() {
                       </td>
 
                       <td className="p-3">
-                        {t.educator_name ? (
+                        {isTopicDisabledForMale ? (
+                          <span className="text-slate-400 text-[11px] font-medium">— غير مطلوب للذكور —</span>
+                        ) : t.educator_name ? (
                           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span className="font-bold text-[11px] truncate font-mono">
@@ -2205,73 +2310,77 @@ function PatientEducationContent() {
 
                       {/* Radio for comprehension */}
                       <td className="p-3 text-center">
-                        <div className={`inline-flex items-center gap-1.5 p-1 rounded-lg border ${
-                          t.is_comprehended === null && fieldErrors.topicsComprehension && canEditThisRow ? "border-rose-300 bg-rose-50/40" : "border-slate-200 bg-white"
-                        }`}>
-                          <button
-                            type="button"
-                            disabled={!canEditThisRow}
-                            onClick={() => {
-                              const updated = [...topics];
-                              updated[idx].is_comprehended = true;
-                              if (
-                                !updated[idx].educator_name ||
-                                (isNurseItem && role === "nurse") ||
-                                (isSecondRoleItem && (
-                                  (needsTechnician && role === "technician") ||
-                                  (needsRadiologist && role === "radiologist") ||
-                                  isAdmin
-                                ))
-                              ) {
-                                updated[idx].educator_name = profile?.full_name || updated[idx].educator_name;
-                              }
-                              setTopics(updated);
-                            }}
-                            className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all ${
-                              t.is_comprehended === true
-                                ? "bg-emerald-600 text-white shadow-xs"
-                                : "text-slate-600 hover:bg-slate-100"
-                            } ${!canEditThisRow ? "cursor-not-allowed opacity-60" : ""}`}
-                          >
-                            نعم
-                          </button>
+                        {isTopicDisabledForMale ? (
+                          <span className="text-slate-400 text-xs font-bold">—</span>
+                        ) : (
+                          <div className={`inline-flex items-center gap-1.5 p-1 rounded-lg border ${
+                            t.is_comprehended === null && fieldErrors.topicsComprehension && canEditThisRow ? "border-rose-300 bg-rose-50/40" : "border-slate-200 bg-white"
+                          }`}>
+                            <button
+                              type="button"
+                              disabled={!canEditThisRow}
+                              onClick={() => {
+                                const updated = [...topics];
+                                updated[idx].is_comprehended = true;
+                                if (
+                                  !updated[idx].educator_name ||
+                                  (isNurseItem && role === "nurse") ||
+                                  (isSecondRoleItem && (
+                                    (needsTechnician && role === "technician") ||
+                                    (needsRadiologist && role === "radiologist") ||
+                                    isAdmin
+                                  ))
+                                ) {
+                                  updated[idx].educator_name = profile?.full_name || updated[idx].educator_name;
+                                }
+                                setTopics(updated);
+                              }}
+                              className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                t.is_comprehended === true
+                                  ? "bg-emerald-600 text-white shadow-xs"
+                                  : "text-slate-600 hover:bg-slate-100"
+                              } ${!canEditThisRow ? "cursor-not-allowed opacity-60" : ""}`}
+                            >
+                              نعم
+                            </button>
 
-                          <button
-                            type="button"
-                            disabled={!canEditThisRow}
-                            onClick={() => {
-                              const updated = [...topics];
-                              updated[idx].is_comprehended = false;
-                              if (
-                                !updated[idx].educator_name ||
-                                (isNurseItem && role === "nurse") ||
-                                (isSecondRoleItem && (
-                                  (needsTechnician && role === "technician") ||
-                                  (needsRadiologist && role === "radiologist") ||
-                                  isAdmin
-                                ))
-                              ) {
-                                updated[idx].educator_name = profile?.full_name || updated[idx].educator_name;
-                              }
-                              setTopics(updated);
-                            }}
-                            className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all ${
-                              t.is_comprehended === false
-                                ? "bg-rose-600 text-white shadow-xs"
-                                : "text-slate-600 hover:bg-slate-100"
-                            } ${!canEditThisRow ? "cursor-not-allowed opacity-60" : ""}`}
-                          >
-                            لا
-                          </button>
-                        </div>
+                            <button
+                              type="button"
+                              disabled={!canEditThisRow}
+                              onClick={() => {
+                                const updated = [...topics];
+                                updated[idx].is_comprehended = false;
+                                if (
+                                  !updated[idx].educator_name ||
+                                  (isNurseItem && role === "nurse") ||
+                                  (isSecondRoleItem && (
+                                    (needsTechnician && role === "technician") ||
+                                    (needsRadiologist && role === "radiologist") ||
+                                    isAdmin
+                                  ))
+                                ) {
+                                  updated[idx].educator_name = profile?.full_name || updated[idx].educator_name;
+                                }
+                                setTopics(updated);
+                              }}
+                              className={`px-2.5 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                t.is_comprehended === false
+                                  ? "bg-rose-600 text-white shadow-xs"
+                                  : "text-slate-600 hover:bg-slate-100"
+                              } ${!canEditThisRow ? "cursor-not-allowed opacity-60" : ""}`}
+                            >
+                              لا
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Re-education */}
                       <td className="p-3 text-center">
                         <input
                           type="checkbox"
-                          disabled={!canEditThisRow}
-                          checked={t.reeducation_required}
+                          disabled={!canEditThisRow || isTopicDisabledForMale}
+                          checked={!isTopicDisabledForMale && t.reeducation_required}
                           onChange={(e) => {
                             const updated = [...topics];
                             updated[idx].reeducation_required = e.target.checked;
@@ -2651,6 +2760,8 @@ function PatientEducationContent() {
           </thead>
           <tbody>
             {topics.map((t, idx) => {
+              const isWomenTopic = idx === 1 || t.topic_name.includes("التنبيه علي السيدة");
+              const isTopicDisabledForMale = isMale && isWomenTopic;
               return (
                 <tr key={idx}>
                   <td className="border border-black p-1.5 font-mono">{educationDate || new Date().toLocaleDateString("ar-EG")}</td>
@@ -2663,13 +2774,24 @@ function PatientEducationContent() {
                         </span>
                       </>
                     ) : (
-                      t.topic_name
+                      <>
+                        <span>{t.topic_name}</span>
+                        {isTopicDisabledForMale && <span className="mr-1 text-[10px] text-slate-500 font-normal">(غير مطلوب للذكور)</span>}
+                      </>
                     )}
                   </td>
-                  <td className="border border-black p-1.5">{t.educator_name || profile?.full_name || ""}</td>
-                  <td className="border border-black p-1.5 font-bold">{t.is_comprehended === true ? "✓" : ""}</td>
-                  <td className="border border-black p-1.5 font-bold">{t.is_comprehended === false ? "✓" : ""}</td>
-                  <td className="border border-black p-1.5">{t.reeducation_required ? "✓" : ""}</td>
+                  <td className="border border-black p-1.5">
+                    {isTopicDisabledForMale ? "—" : (t.educator_name || profile?.full_name || "")}
+                  </td>
+                  <td className="border border-black p-1.5 font-bold">
+                    {isTopicDisabledForMale ? "—" : (t.is_comprehended === true ? "✓" : "")}
+                  </td>
+                  <td className="border border-black p-1.5 font-bold">
+                    {isTopicDisabledForMale ? "—" : (t.is_comprehended === false ? "✓" : "")}
+                  </td>
+                  <td className="border border-black p-1.5">
+                    {isTopicDisabledForMale ? "—" : (t.reeducation_required ? "✓" : "")}
+                  </td>
                 </tr>
               );
             })}
