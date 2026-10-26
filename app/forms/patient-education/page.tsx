@@ -532,8 +532,15 @@ function PatientEducationContent() {
           setTopics([...coreMapped, ...customMapped]);
         }
 
+        const rawGender = String(data.gender || data.patients?.gender || (data as any).form_submissions?.data?.gender || "").trim();
+        const isCurrentMale = rawGender === "ذكر" || rawGender.toLowerCase() === "male";
+
         const entries = data.health_education_topic_entries || [];
-        const nursePrefixes = ["تحضير", "التنبيه علي السيدة", "السقوط"];
+        const nursePrefixes = [
+          "تحضير",
+          ...(isCurrentMale ? [] : ["التنبيه علي السيدة"]),
+          "السقوط",
+        ];
         const techPrefixes = ["المخاطر المحتملة", "بالصبغة", "تعليمات ما بعد الإجراء"];
 
         const hasNurseCompleted = nursePrefixes.every((p) =>

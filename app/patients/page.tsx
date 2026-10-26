@@ -74,6 +74,7 @@ const TIMELINE_LIMIT = 1000;
 
 function toTimelineItem(row: ClinicalRecordRow, patient: any) {
   const meta = TIMELINE_META[row.formType];
+  const p = patient || row.patient;
   return {
     ...normalizeRecordData(row.formType, row.record),
     formType: row.formType,
@@ -83,10 +84,12 @@ function toTimelineItem(row: ClinicalRecordRow, patient: any) {
     editUrl: `${meta.editUrl}?editId=${row.id}`,
     icon: meta.icon,
     color: meta.color,
-    resolvedPatientName: patient.full_name || row.patient?.full_name,
-    resolvedMrn: patient.mrn || row.patient?.mrn,
-    resolvedGender: patient.gender || row.patient?.gender || "-",
-    resolvedAge: patient.age || row.patient?.age || "-",
+    patient: p,
+    gender: p?.gender,
+    resolvedPatientName: p?.full_name || row.patient?.full_name,
+    resolvedMrn: p?.mrn || row.patient?.mrn,
+    resolvedGender: p?.gender || row.patient?.gender || "-",
+    resolvedAge: p?.age || row.patient?.age || "-",
   };
 }
 

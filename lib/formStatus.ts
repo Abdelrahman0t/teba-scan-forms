@@ -202,8 +202,23 @@ export function getFormStatusInfo(item: any): FormStatusInfo {
 
     const isBothOrOther = hasOther || (hasRadio && hasTech);
 
-    const entries = Array.isArray(item.health_education_topic_entries) ? item.health_education_topic_entries : [];
-    const rawGender = String(item.gender || item.patient?.gender || item.patients?.gender || item.data?.gender || "").trim();
+    const entries = (
+      Array.isArray(item.health_education_topic_entries) && item.health_education_topic_entries.length > 0
+        ? item.health_education_topic_entries
+        : Array.isArray(item.topics) && item.topics.length > 0
+        ? item.topics
+        : Array.isArray(item.data?.topics) && item.data.topics.length > 0
+        ? item.data.topics
+        : []
+    );
+    const rawGender = String(
+      (item.resolvedGender && item.resolvedGender !== "-") ? item.resolvedGender :
+      item.gender ||
+      item.patient?.gender ||
+      item.patients?.gender ||
+      item.data?.gender ||
+      ""
+    ).trim();
     const isMale = rawGender === "ذكر" || rawGender.toLowerCase() === "male";
     const nurseTopicPrefixes = [
       "تحضير",

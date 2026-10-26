@@ -66,6 +66,8 @@ function toSubmissionItem(row: ClinicalRecordRow) {
     editUrl: `${meta.editUrl}?editId=${row.id}`,
     icon: meta.icon,
     color: meta.color,
+    patient: p,
+    gender: item.gender || p?.gender,
     resolvedPatientName: item.patient_name || item.full_name || p?.full_name || "مريض غير مسجل بالاسم",
     resolvedMrn: item.mrn || p?.mrn || "بدون ملف",
     resolvedGender: item.gender || p?.gender || "-",
