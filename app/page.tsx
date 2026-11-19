@@ -66,8 +66,18 @@ export default function Home() {
 
   async function loadDashboardData() {
     try {
+      // 1. Fetch exact counts first and update the stats cards immediately
+      const exactCounts = await fetchExactClinicalCounts(supabase);
+      setStats((prev) => ({
+        ...prev,
+        totalSubmissions: exactCounts.totalSubmissions,
+        todaySubmissions: exactCounts.todaySubmissions,
+        patientsCount: exactCounts.patients,
+      }));
+      setFormCounts(exactCounts.byFormId);
+
+      // 2. Fetch only the most recent 10 records per form table (fast & lightweight)
       const [
-        exactCounts,
         radsRes,
         edusRes,
         fallScreenRes,
@@ -75,20 +85,37 @@ export default function Home() {
         fallPedRes,
         assessRes,
         transRes,
-        patientsRes,
       ] = await Promise.all([
-        fetchExactClinicalCounts(supabase),
-        supabase.from("radiation_exposure_logs").select("*").order("created_at", { ascending: false }),
-        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").order("created_at", { ascending: false }),
-        supabase.from("fall_risk_screenings").select("*").order("created_at", { ascending: false }),
-        supabase.from("fall_risk_adult_assessments").select("*").order("created_at", { ascending: false }),
-        supabase.from("fall_risk_pediatric_assessments").select("*").order("created_at", { ascending: false }),
-        supabase.from("patient_assessments").select("*").order("created_at", { ascending: false }),
-        supabase.from("patient_transfers").select("*").order("created_at", { ascending: false }),
-        supabase.from("patients").select("id, full_name, mrn, age, gender"),
+        supabase.from("radiation_exposure_logs").select("*").order("created_at", { ascending: false }).limit(10),
+        supabase.from("health_education_assessments").select("*, health_education_topic_entries(*)").order("created_at", { ascending: false }).limit(10),
+        supabase.from("fall_risk_screenings").select("*").order("created_at", { ascending: false }).limit(10),
+        supabase.from("fall_risk_adult_assessments").select("*").order("created_at", { ascending: false }).limit(10),
+        supabase.from("fall_risk_pediatric_assessments").select("*").order("created_at", { ascending: false }).limit(10),
+        supabase.from("patient_assessments").select("*").order("created_at", { ascending: false }).limit(10),
+        supabase.from("patient_transfers").select("*").order("created_at", { ascending: false }).limit(10),
       ]);
 
-      const patientMap = new Map((patientsRes.data || []).map((p: any) => [p.id, p]));
+      // Collect patient IDs only for recent items
+      const recentRaw: any[] = [
+        ...(radsRes.data || []),
+        ...(edusRes.data || []),
+        ...(fallScreenRes.data || []),
+        ...(fallAdultRes.data || []),
+        ...(fallPedRes.data || []),
+        ...(assessRes.data || []),
+        ...(transRes.data || []),
+      ];
+      const patientIds = Array.from(new Set(recentRaw.map((item) => item.patient_id).filter(Boolean)));
+
+      // Fetch only the patients relevant to the recent records
+      let patientMap = new Map();
+      if (patientIds.length > 0) {
+        const { data: pData } = await supabase
+          .from("patients")
+          .select("id, full_name, mrn, age, gender")
+          .in("id", patientIds);
+        patientMap = new Map((pData || []).map((p: any) => [p.id, p]));
+      }
 
       function formatItem(item: any, formType: string, formTypeName: string, color: string, editUrl: string) {
         const p = item.patient_id ? patientMap.get(item.patient_id) : null;
