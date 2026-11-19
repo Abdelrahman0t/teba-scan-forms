@@ -293,6 +293,10 @@ CREATE TABLE IF NOT EXISTS public.patient_transfers (
 CREATE INDEX IF NOT EXISTS idx_transfer_patient ON public.patient_transfers(patient_id);
 ALTER TABLE public.patient_transfers ADD COLUMN IF NOT EXISTS pacemaker_score INT DEFAULT 0;
 ALTER TABLE public.patient_transfers ADD COLUMN IF NOT EXISTS provisional_pacemaker_score INT DEFAULT 0;
+ALTER TABLE public.patient_transfers ADD COLUMN IF NOT EXISTS safety_checklist JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.patient_transfers ADD COLUMN IF NOT EXISTS required_exams TEXT[] DEFAULT '{}';
+ALTER TABLE public.patient_transfers ADD COLUMN IF NOT EXISTS other_exam TEXT;
+ALTER TABLE public.patient_transfers ADD COLUMN IF NOT EXISTS missing_roles TEXT[];
 
 -- ----------------------------------------------------------------------------
 -- 6. SEED / UPDATE ALL 7 FORM TEMPLATES

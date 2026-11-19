@@ -8,8 +8,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "معرف الموظف مطلوب" }, { status: 400 });
     }
 
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://grqdctpkeitnloobuged.supabase.co";
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdycWRjdHBrZWl0bmxvb2J1Z2VkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzI1NTU4MSwiZXhwIjoyMTAyODMxNTgxfQ.F5_zWwXZJJYHPKHGkjOYvZ0Q1UlLmvBtuR0rWLbyW8Q";
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://135.181.168.228:8080";
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q";
 
     // Use admin client with service_role to bypass RLS and guarantee deletion
     const supabase = createSupabaseClient(url, serviceRoleKey, {

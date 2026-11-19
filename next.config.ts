@@ -2,6 +2,18 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.1.7", "192.168.1.*", "localhost:3000"],
+  async rewrites() {
+    return [
+      {
+        source: "/rest/v1/:path*",
+        destination: "http://135.181.168.228:8080/rest/v1/:path*",
+      },
+      {
+        source: "/auth/v1/:path*",
+        destination: "http://135.181.168.228:8080/auth/v1/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {
