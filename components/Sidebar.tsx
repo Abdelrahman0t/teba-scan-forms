@@ -134,12 +134,20 @@ export default function Sidebar({ collapsed: propCollapsed, onToggleCollapse }: 
   }
 
   // Live badge counts
+  const lastCountsFetchRef = useRef<number>(0);
+
   useEffect(() => {
+    lastCountsFetchRef.current = Date.now();
     fetchCounts();
   }, []);
 
-  useFormSync(() => {
-    fetchCounts();
+  useFormSync((payload) => {
+    const now = Date.now();
+    // Refresh counts immediately if a form was submitted, or throttle background polls to at most once every 30s
+    if (payload?.type === "FORM_SUBMITTED" || now - lastCountsFetchRef.current > 30000) {
+      lastCountsFetchRef.current = now;
+      fetchCounts();
+    }
   });
 
   async function fetchCounts() {

@@ -128,14 +128,14 @@ export function useFormSync(onSync: (payload?: SyncPayload) => void, enabled: bo
     window.addEventListener("focus", handleFocusOrVisible);
     document.addEventListener("visibilitychange", handleFocusOrVisible);
 
-    // 5. Smart live background polling (Every 60s when visible - last-resort fallback only)
-    // BroadcastChannel + LocalStorage events + Supabase Realtime WebSocket already handle instant sync.
-    // This is a safety net for rare edge cases (e.g. WebSocket dropped, tab was backgrounded).
+    // 5. Smart live background polling (Every 4s when visible - guaranteed live cross-device sync)
+    // BroadcastChannel + LocalStorage events handle instant sync within same device.
+    // This poll provides fast 4-second live synchronization across different devices/browsers.
     const pollInterval = setInterval(() => {
       if (document.visibilityState === "visible") {
-        triggerSync();
+        triggerSync({ type: "POLL", timestamp: Date.now() });
       }
-    }, 60000);
+    }, 4000);
 
     // 6. Supabase Realtime Subscription (Multi-user / multi-account live push via WebSockets)
     const supabase = createClient();

@@ -5,7 +5,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
  * and the patients registry. Backed by the RPCs in supabase_clinical_records.sql.
  */
 
-export const RECORDS_PAGE_SIZE = 200;
+export const RECORDS_PAGE_SIZE = 50;
 
 export type ClinicalFormType =
   | "radiation"

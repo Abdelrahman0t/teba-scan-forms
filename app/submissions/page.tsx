@@ -210,11 +210,13 @@ export default function SubmissionsPage() {
     reload(query, queryKey);
   }, [query, queryKey, authLoading, reload]);
 
-  // Real-time live synchronization (No Refresh Needed)
-  useFormSync(() => {
+  // Real-time live synchronization (No Refresh Needed - updates every 4s seamlessly)
+  useFormSync((payload) => {
     if (authLoading) return;
     const { query: q, queryKey: key } = queryRef.current;
-    reload(q, key, Math.max(RECORDS_PAGE_SIZE, itemsCountRef.current), true);
+    // On background poll, only fetch the updated rows (lightweight 5ms query) without recalculating full summaries
+    const forceSummary = payload?.type === "FORM_SUBMITTED";
+    reload(q, key, Math.max(RECORDS_PAGE_SIZE, itemsCountRef.current), forceSummary);
   });
 
   const handleView = useCallback((item: any) => setSelectedSubmission(item), []);

@@ -56,12 +56,19 @@ export default function Home() {
     }
   }, [loading, user, isAdmin, status, role, router]);
 
+  const lastDashboardLoadRef = useRef<number>(0);
+
   useEffect(() => {
+    lastDashboardLoadRef.current = Date.now();
     loadDashboardData();
   }, [role, isAdmin]);
 
-  useFormSync(() => {
-    loadDashboardData();
+  useFormSync((payload) => {
+    const now = Date.now();
+    if (payload?.type === "FORM_SUBMITTED" || now - lastDashboardLoadRef.current > 30000) {
+      lastDashboardLoadRef.current = now;
+      loadDashboardData();
+    }
   });
 
   async function loadDashboardData() {
