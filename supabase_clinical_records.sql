@@ -24,6 +24,12 @@ CREATE INDEX IF NOT EXISTS idx_assessment_created_id ON public.patient_assessmen
 CREATE INDEX IF NOT EXISTS idx_transfer_created_id   ON public.patient_transfers (created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_edu_patient           ON public.health_education_assessments (patient_id);
+CREATE INDEX IF NOT EXISTS idx_rad_patient           ON public.radiation_exposure_logs (patient_id);
+CREATE INDEX IF NOT EXISTS idx_fall_screen_patient   ON public.fall_risk_screenings (patient_id);
+CREATE INDEX IF NOT EXISTS idx_fall_adult_patient    ON public.fall_risk_adult_assessments (patient_id);
+CREATE INDEX IF NOT EXISTS idx_fall_ped_patient      ON public.fall_risk_pediatric_assessments (patient_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_patient    ON public.patient_assessments (patient_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_patient      ON public.patient_transfers (patient_id);
 CREATE INDEX IF NOT EXISTS idx_edu_topics_assessment ON public.health_education_topic_entries (assessment_id);
 
 -- ----------------------------------------------------------------------------

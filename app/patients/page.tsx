@@ -69,8 +69,8 @@ const TIMELINE_META: Record<ClinicalFormType, { name: string; headerCode: string
   transfer: { name: "نموذج نقل المريض (RSTP)", headerCode: "TRC.ACT", editUrl: "/forms/patient-transfer", icon: Ambulance, color: "text-blue-600 bg-blue-50" },
 };
 
-// A single patient's full history is small; load it in one call.
-const TIMELINE_LIMIT = 1000;
+// A single patient's timeline history (fast & lightweight)
+const TIMELINE_LIMIT = 50;
 
 function toTimelineItem(row: ClinicalRecordRow, patient: any) {
   const meta = TIMELINE_META[row.formType];
