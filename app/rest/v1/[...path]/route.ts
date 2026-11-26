@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BACKEND_URL = "http://135.181.168.228:8080";
+const BACKEND_URL =
+  process.env.SUPABASE_INTERNAL_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "http://135.181.168.228:8080";
 
 async function handleProxy(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
