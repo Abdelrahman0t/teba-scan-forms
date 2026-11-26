@@ -5,10 +5,6 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: "/rest/v1/:path*",
-        destination: "http://135.181.168.228:8080/rest/v1/:path*",
-      },
-      {
         source: "/auth/v1/:path*",
         destination: "http://135.181.168.228:8080/auth/v1/:path*",
       },
