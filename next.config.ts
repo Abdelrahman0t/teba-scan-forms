@@ -6,11 +6,11 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/rest/v1/:path*",
-        destination: "https://api.modreck.com/rest/v1/:path*",
+        destination: "https://supabase.modreck.com/rest/v1/:path*",
       },
       {
         source: "/auth/v1/:path*",
-        destination: "https://api.modreck.com/auth/v1/:path*",
+        destination: "https://supabase.modreck.com/auth/v1/:path*",
       },
     ];
   },
